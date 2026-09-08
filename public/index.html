@@ -35,7 +35,7 @@
       <a href="#/pesanan?status=baru" class="pintas"><span>🆕</span>Baru</a>
       <a href="#/lacak" class="pintas"><span>🔗</span>Tracking</a>
       <a href="#/pesanan?status=on_trip" class="pintas"><span>🚢</span>On-Trip</a>
-      <a href="#/pesanan?status=selesai" class="pintas"><span>✅</span>Selesai</a>
+      <a href="#/audit" class="pintas"><span>🔍</span>Audit</a>
       <a href="#/buat" class="pintas"><span>➕</span>Buat</a>
       <a href="#/rekonsiliasi" class="pintas"><span>🏦</span>Rekon Bank</a>
     </nav>
@@ -235,6 +235,84 @@
   <dialog id="modal-detail">
     <div id="isi-modal-detail"></div>
     <button type="button" id="tutup-detail" class="tombol-lembut">Tutup</button>
+  </dialog>
+
+
+  <!-- Audit pembayaran supplier -->
+  <section id="tampilan-audit" class="tampilan" hidden>
+    <h2 class="judul">🔍 Audit Pembayaran Supplier</h2>
+
+    <div class="panel">
+      <h3>Daftar Tagihan Supplier</h3>
+      <label class="unggah">
+        <input type="file" id="berkas-tagihan" accept=".xlsx,.csv" hidden>
+        <span class="tombol tombol-blok">+ Upload Daftar Tagihan</span>
+      </label>
+      <p id="status-tagihan" class="status-unggah">Belum ada tagihan</p>
+      <p id="pesan-tagihan" class="pesan" hidden></p>
+      <button type="button" id="jalankan-audit" class="tombol-lembut">Jalankan Auto-Match</button>
+      <p id="pesan-audit" class="pesan" hidden></p>
+    </div>
+
+    <form class="panel" id="filter-audit">
+      <h3>Filter</h3>
+      <label>Supplier
+        <input name="pemasok" type="search" placeholder="🔎 Nama supplier" autocomplete="off">
+      </label>
+      <div class="sejajar">
+        <label>Bulan
+          <select name="bulan"><option value="">Semua</option></select>
+        </label>
+        <label>Tahun
+          <select name="tahun"><option value="">Semua</option></select>
+        </label>
+      </div>
+      <label>Status
+        <select name="status">
+          <option value="">Semua status</option>
+          <option value="MATCH">MATCH</option>
+          <option value="KURANG_BAYAR">KURANG BAYAR</option>
+          <option value="LEBIH_BAYAR">LEBIH BAYAR</option>
+          <option value="INVOICE_BELUM_ADA_TRANSFER">INVOICE BELUM ADA TRANSFER</option>
+          <option value="TRANSFER_TANPA_INVOICE">TRANSFER TANPA INVOICE</option>
+          <option value="PERLU_REVIEW">PERLU REVIEW</option>
+        </select>
+      </label>
+      <label class="sebaris">
+        <input type="checkbox" name="hanya_selisih" value="1" checked>
+        Tampilkan hanya yang bermasalah
+      </label>
+      <div class="sejajar rapat">
+        <button type="button" id="reset-audit" class="tombol-lembut">Reset Filter</button>
+        <button type="button" id="ekspor-audit" class="tombol-lembut">Export Hasil</button>
+      </div>
+    </form>
+
+    <div class="panel" id="ringkasan-audit" aria-live="polite"></div>
+
+    <div class="gulir-mendatar">
+      <table class="tabel" id="tabel-audit">
+        <thead>
+          <tr>
+            <th>Supplier</th><th>No Invoice</th><th>Tgl Invoice</th>
+            <th class="angka-kolom">Gross</th>
+            <th class="angka-kolom">PPh</th>
+            <th class="angka-kolom">Net Seharusnya</th>
+            <th class="angka-kolom">Transfer Bank</th>
+            <th class="angka-kolom">Selisih</th>
+            <th>Status</th>
+          </tr>
+        </thead>
+        <tbody id="isi-tabel-audit"></tbody>
+      </table>
+    </div>
+    <button id="muat-audit" class="tombol-lembut" hidden>Muat lebih banyak</button>
+  </section>
+
+  <!-- Modal detail audit -->
+  <dialog id="modal-audit">
+    <div id="isi-modal-audit"></div>
+    <button type="button" id="tutup-audit" class="tombol-lembut">Tutup</button>
   </dialog>
 
 </main>

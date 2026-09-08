@@ -24,7 +24,7 @@ function kenaliFormat(buffer, namaBerkas = '') {
 }
 
 /** Ubah sheet exceljs menjadi larik baris biasa berindeks nol. */
-function barisDariSheet(sheet) {
+export function barisDariSheet(sheet) {
   const baris = [];
   const batas = Math.min(sheet.rowCount, BATAS_BARIS);
 
@@ -57,7 +57,7 @@ function barisDariSheet(sheet) {
  * @returns {Promise<{transaksi: Array, peta: object, sheet: string, barisHeader: number}>}
  * @throws {GalatFormat} bila format tidak didukung atau tabelnya tidak dikenali.
  */
-export async function bacaRekeningKoran(buffer, namaBerkas = '') {
+export async function bukaBerkas(buffer, namaBerkas = '') {
   if (!buffer || buffer.length === 0) throw new GalatFormat('Berkas kosong.');
   if (buffer.length > BATAS_UKURAN) {
     throw new GalatFormat(`Berkas melebihi ${BATAS_UKURAN / 1024 / 1024} MB.`);
@@ -83,18 +83,29 @@ export async function bacaRekeningKoran(buffer, namaBerkas = '') {
     throw new GalatFormat('Berkas tidak bisa dibaca. Pastikan formatnya .xlsx atau .csv dan tidak rusak.');
   }
 
-  // Sheet pertama yang tabelnya dikenali yang dipakai; rekening koran kerap
-  // menyertakan sheet ringkasan atau catatan di depan.
+  if (buku.worksheets.length === 0) throw new GalatFormat('Berkas tidak memuat sheet apa pun.');
+  return buku.worksheets.map((sheet) => ({ nama: sheet.name, baris: barisDariSheet(sheet) }));
+}
+
+/**
+ * Membaca berkas rekening koran.
+ *
+ * Sheet pertama yang tabelnya dikenali yang dipakai; rekening koran kerap
+ * menyertakan sheet ringkasan atau catatan di depan.
+ */
+export async function bacaRekeningKoran(buffer, namaBerkas = '') {
+  const sheets = await bukaBerkas(buffer, namaBerkas);
+
   const galat = [];
-  for (const sheet of buku.worksheets) {
+  for (const sheet of sheets) {
     try {
-      const hasil = uraiTabel(barisDariSheet(sheet), { berkasSumber: namaBerkas });
-      return { ...hasil, sheet: sheet.name };
+      const hasil = uraiTabel(sheet.baris, { berkasSumber: namaBerkas });
+      return { ...hasil, sheet: sheet.nama };
     } catch (error) {
       if (!(error instanceof GalatFormat)) throw error;
       galat.push(error);
     }
   }
 
-  throw galat[0] ?? new GalatFormat('Berkas tidak memuat sheet apa pun.');
+  throw galat[0] ?? new GalatFormat('Berkas tidak memuat tabel yang dikenali.');
 }

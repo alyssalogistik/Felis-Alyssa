@@ -11,6 +11,7 @@ import ExcelJS from 'exceljs';
 import { createAdminClient } from '../supabase.js';
 import { bacaRekeningKoran, BATAS_UKURAN } from './baca.js';
 import { GalatFormat, ringkasValidasi } from './parser.js';
+import audit from './audit.js';
 
 const db = createAdminClient();
 
@@ -339,5 +340,7 @@ api.get('/ekspor', jalur(async (req, res) => {
   res.setHeader('Content-Disposition', `attachment; filename="${bagian.join('-').toLowerCase()}.xlsx"`);
   res.send(Buffer.from(await buku.xlsx.writeBuffer()));
 }));
+
+api.use('/audit', audit);
 
 export default api;

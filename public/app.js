@@ -5,6 +5,7 @@ import {
   aman, ambil, el, kosong, pasangan, rupiah, tanggal, formatTanggalPolos,
 } from './bantuan.js';
 import { pasangKendaliRekonsiliasi, muatRekonsiliasi } from './rekonsiliasi.js';
+import { pasangKendaliAudit, muatAudit } from './audit.js';
 
 const STATUS = {
   baru:       'Baru',
@@ -217,7 +218,7 @@ async function muatTrip() {
 
 // --- Router -----------------------------------------------------------------
 
-const TAMPILAN = ['beranda', 'pesanan', 'detail', 'buat', 'lacak', 'trip', 'rekonsiliasi'];
+const TAMPILAN = ['beranda', 'pesanan', 'detail', 'buat', 'lacak', 'trip', 'rekonsiliasi', 'audit'];
 
 function arahkan() {
   const [jalur, kueri] = (location.hash.slice(2) || 'beranda').split('?');
@@ -234,6 +235,7 @@ function arahkan() {
 
   if (nama === 'beranda') muatBeranda();
   else if (nama === 'rekonsiliasi') muatRekonsiliasi();
+  else if (nama === 'audit') muatAudit();
   else if (nama === 'trip') muatTrip();
   else if (nama === 'detail') muatDetail(bagian[1]);
   else if (nama === 'pesanan') {
@@ -329,6 +331,7 @@ el('form-lacak').addEventListener('submit', async (peristiwa) => {
 });
 
 pasangKendaliRekonsiliasi();
+pasangKendaliAudit();
 
 window.addEventListener('hashchange', arahkan);
 arahkan();

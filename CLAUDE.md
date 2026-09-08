@@ -80,3 +80,30 @@ Sisa peringatan `npm audit` yang diketahui: **uuid** melalui exceljs
 `uuidv4()`. Perbaikannya menurunkan exceljs ke 3.4.0 yang jauh lebih tua, jadi
 peringatan ini dibiarkan secara sadar. Tinjau ulang saat exceljs memperbarui
 dependensinya.
+
+## Audit pembayaran supplier
+
+Aturan pencocokan hanya ada di `src/rekonsiliasi/pencocokan.js` — murni, tanpa
+I/O, dan tidak ditulis ulang dalam SQL. Kalau logikanya disalin ke database,
+dua tempat bisa menyimpang dalam memutuskan apa itu MATCH.
+
+Dua kaidah yang tidak boleh dilanggar saat mengubah mesin ini:
+
+- **Nominal tidak pernah menggugurkan kandidat**, hanya menentukan status.
+  Kalau nominal dijadikan syarat kelayakan, transfer yang kurang bayar akan
+  hilang dari hasil — padahal itu yang paling perlu ketahuan saat audit.
+- **Satu transaksi hanya membayar satu tagihan.** Tanpa pembatasan itu, satu
+  transfer bisa membuat beberapa tagihan tampak lunas sekaligus.
+
+PPh diperlakukan sebagai potongan yang disetor sendiri, bukan uang yang keluar
+lewat bank: acuan pencocokan adalah `net_seharusnya = gross - pph`, dan kolom
+itu dihitung database agar tidak bergantung pada aplikasi menghitung benar.
+
+Kecocokan dengan `dikonfirmasi = true` adalah keputusan manusia dan tidak boleh
+tertimpa saat audit dijalankan ulang.
+
+### Batasan yang diketahui
+
+Satu transfer yang membayar beberapa invoice sekaligus, dan pembayaran cicilan,
+belum ditangani. Keduanya akan muncul sebagai KURANG_BAYAR atau PERLU_REVIEW —
+ditandai untuk diperiksa manusia, bukan salah diklaim lunas.

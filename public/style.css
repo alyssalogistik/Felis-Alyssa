@@ -363,3 +363,29 @@ dialog .tombol-lembut, dialog .tombol { margin-top: 0; }
 @media (min-width: 640px) {
   .ringkas { grid-template-columns: repeat(4, 1fr); }
 }
+
+/* --- Audit pembayaran supplier ------------------------------------------- */
+
+.sebaris { display: flex; align-items: center; gap: 9px; margin-top: 14px; }
+.sebaris input[type="checkbox"] { width: auto; margin: 0; accent-color: var(--aksen); }
+
+#jalankan-audit { margin-top: 12px; }
+
+/* Status audit lebih banyak dan lebih panjang daripada status rekon, jadi
+   lencananya dibiarkan membungkus alih-alih memaksa tabel melebar. */
+.lencana.panjang { white-space: normal; text-align: center; line-height: 1.3; display: inline-block; }
+
+.l-MATCH                      { background: rgba(61,220,132,.15);  color: var(--hijau); }
+.l-KURANG_BAYAR               { background: rgba(255,92,92,.15);   color: var(--merah); }
+.l-LEBIH_BAYAR                { background: rgba(169,112,255,.15); color: var(--ungu); }
+.l-INVOICE_BELUM_ADA_TRANSFER { background: rgba(245,165,36,.15);  color: var(--aksen); }
+.l-TRANSFER_TANPA_INVOICE     { background: rgba(74,158,255,.15);  color: var(--biru); }
+.l-PERLU_REVIEW               { background: rgba(255,145,60,.15);  color: #ff913c; }
+
+.selisih-kurang { color: var(--merah); }
+.selisih-lebih  { color: var(--ungu); }
+
+.keyakinan { display: inline-block; margin-left: 6px; font-size: 11px; color: var(--teks-redup); }
+
+.alasan { margin: 10px 0 0; padding-left: 18px; color: var(--teks-redup); font-size: 12.5px; }
+.alasan li { margin-bottom: 4px; }
