@@ -1,0 +1,12 @@
+# Kredensial - JANGAN pernah di-commit
+.env
+.env.local
+.env.*.local
+
+# Dependencies
+node_modules/
+
+# Log & cache
+*.log
+npm-debug.log*
+.DS_Store
