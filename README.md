@@ -103,3 +103,10 @@ Setelah menjalankan `supabase/migrations/`, jalankan `supabase/verifikasi.sql`
 di SQL Editor. Skrip itu hanya membaca katalog sistem — tidak menyisipkan,
 mengubah, maupun menghapus apa pun — dan aman diulang pada project yang sudah
 berisi data. Semua baris harus berbunyi `OK`.
+
+### Mengunci sasaran Supabase
+
+Isi `SUPABASE_PROJECT_REF` dengan bagian `<ref>` dari `SUPABASE_URL`. Selama
+terisi, aplikasi menolak menyala ketika kredensialnya menunjuk ke project lain:
+`/api` menjawab 503 dan alasannya dicetak ke log, sebelum satu pun query
+terkirim. Biarkan kosong hanya untuk pengembangan lokal.

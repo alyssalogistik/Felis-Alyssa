@@ -25,8 +25,25 @@ if (kurang.length > 0) {
     res.status(503).json({ pesan: `Kredensial Supabase belum diisi: ${kurang.join(', ')}.` })
   );
 } else {
-  const { default: api } = await import('./api.js');
-  app.use('/api', api);
+  // Sasaran diperiksa sebelum satu pun query dikirim. Kalau kredensialnya
+  // menunjuk ke project lain, /api mati total dan alasannya dicetak — jauh
+  // lebih baik daripada aplikasi menyala lalu menulis ke database yang salah.
+  const { periksaProject } = await import('./supabase.js');
+  const sasaran = periksaProject();
+
+  if (!sasaran.aman) {
+    console.error(`\nSASARAN SUPABASE SALAH: ${sasaran.alasan}\n`);
+    app.use('/api', (_req, res) => res.status(503).json({ pesan: sasaran.alasan }));
+  } else {
+    console.log(
+      sasaran.diharapkan
+        ? `Supabase project: ${sasaran.ref} (cocok dengan SUPABASE_PROJECT_REF)`
+        : `Supabase project: ${sasaran.ref ?? 'tidak dikenali'} ` +
+          '(SUPABASE_PROJECT_REF belum diisi, sasaran tidak dikunci)'
+    );
+    const { default: api } = await import('./api.js');
+    app.use('/api', api);
+  }
 }
 
 app.use((error, _req, res, _next) => {

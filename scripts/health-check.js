@@ -59,8 +59,24 @@ if (!refMatch) {
   fail(`SUPABASE_URL formatnya tidak dikenali: ${url}`, 'Harusnya https://<project-ref>.supabase.co');
 }
 
+const diharapkan = process.env.SUPABASE_PROJECT_REF?.trim();
+
 console.log(`  URL          : ${url}`);
 console.log(`  Project ref  : ${refMatch[1]}`);
+
+// Pemeriksaan sasaran didahulukan: kalau refnya salah, tidak ada gunanya
+// melanjutkan, dan menghubungi project yang salah pun sebaiknya dihindari.
+if (diharapkan && refMatch[1] !== diharapkan) {
+  fail(
+    `Project ref TIDAK COCOK. Terpasang "${refMatch[1]}", yang diizinkan "${diharapkan}".`,
+    'Jangan lanjutkan migration. Periksa SUPABASE_URL di .env atau Railway -> Variables.'
+  );
+}
+if (diharapkan) {
+  console.log(`  Diizinkan    : ${diharapkan}  <- COCOK`);
+} else {
+  console.log('  Diizinkan    : (SUPABASE_PROJECT_REF belum diisi, sasaran tidak dikunci)');
+}
 console.log(`  Anon key     : ${mask(anonKey)}`);
 console.log(`  Service key  : ${mask(process.env.SUPABASE_SERVICE_ROLE_KEY)}`);
 console.log('\n  Menghubungi project...\n');

@@ -15,8 +15,13 @@ variable, atau deployment: **verifikasi dulu targetnya milik Alyssa Logistics.**
 Kalau target tidak bisa dipastikan, atau kredensial menunjuk ke tempat lain,
 berhenti dan laporkan. Jangan lanjutkan, jangan menebak.
 
-`scripts/health-check.js` mencetak **project ref** yang sedang dituju. Jalankan
-itu sebelum migration untuk memastikan sasarannya benar.
+Isolasi ini tidak lagi bergantung pada ingatan. Isi `SUPABASE_PROJECT_REF`
+dengan ref project Alyssa, dan aplikasi akan **menolak menyala** ketika
+kredensial menunjuk ke project lain: `/api` mati dengan 503 dan alasannya
+dicetak ke log. Penjaga itu berjalan sebelum satu pun query terkirim.
+
+`scripts/health-check.js` mencetak project ref yang sedang dituju dan gagal
+keras bila tidak cocok. Jalankan itu sebelum migration.
 
 ## Arsitektur
 
