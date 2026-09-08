@@ -27,11 +27,15 @@ function jalur(handler) {
 }
 
 /**
- * Melindungi wildcard PostgREST agar kata kunci diperlakukan sebagai teks biasa.
- * Tanpa ini, pencarian "100%" akan cocok dengan segalanya.
+ * Membungkus nilai untuk dipakai di dalam or() PostgREST.
+ *
+ * Nilai di dalam or() dipisah koma, jadi kata kunci yang mengandung koma atau
+ * tanda kurung akan memecah query kalau tidak dikutip. Yang dilindungi di sini
+ * adalah sintaks filternya; % dan _ sengaja dibiarkan sebagai wildcard supaya
+ * perilakunya sama dengan ringkasan_transaksi_bank() di database.
  */
-function amankanPola(teks) {
-  return String(teks).replace(/[\\%_,()]/g, (c) => `\\${c}`);
+function kutip(nilai) {
+  return `"${String(nilai).replace(/\\/g, '\\\\').replace(/"/g, '\\"')}"`;
 }
 
 /** Membaca kriteria filter dari query string, mengabaikan yang kosong. */
@@ -55,30 +59,22 @@ function kriteriaDari(query) {
 
 /**
  * Menerapkan kriteria ke query PostgREST.
- * Syaratnya disusun sama dengan ringkasan_transaksi_bank() di migration, supaya
- * daftar dan ringkasan tidak pernah menghitung himpunan yang berbeda.
+ *
+ * Bulan dan tahun disamakan terhadap kolom turunan `bulan` dan `tahun`, bukan
+ * dihitung dari tanggal saat query: selain terindeks, LIKE atau extract() pada
+ * kolom bertipe date ditolak Postgres. Syaratnya disusun sama dengan
+ * ringkasan_transaksi_bank() supaya daftar dan ringkasan tidak pernah
+ * menghitung himpunan yang berbeda.
  */
 function terapkanKriteria(query, { cari, bulan, tahun, dari, sampai }) {
   if (cari) {
-    const pola = `%${amankanPola(cari)}%`;
+    const pola = kutip(`%${cari}%`);
     query = query.or(`keterangan.ilike.${pola},referensi.ilike.${pola}`);
   }
+  if (bulan !== null) query = query.eq('bulan', bulan);
+  if (tahun !== null) query = query.eq('tahun', tahun);
   if (dari) query = query.gte('tanggal', dari);
   if (sampai) query = query.lte('tanggal', sampai);
-
-  // Bulan dan tahun diterjemahkan menjadi rentang tanggal supaya indeks pada
-  // kolom tanggal tetap terpakai; extract() akan membuat indeks itu dilewati.
-  if (tahun !== null && bulan !== null) {
-    const akhir = new Date(Date.UTC(tahun, bulan, 0)).getUTCDate();
-    const bb = String(bulan).padStart(2, '0');
-    query = query.gte('tanggal', `${tahun}-${bb}-01`).lte('tanggal', `${tahun}-${bb}-${akhir}`);
-  } else if (tahun !== null) {
-    query = query.gte('tanggal', `${tahun}-01-01`).lte('tanggal', `${tahun}-12-31`);
-  } else if (bulan !== null) {
-    // Tanpa tahun, bulan tidak bisa jadi rentang; pakai perbandingan bagian bulan.
-    query = query.not('tanggal', 'is', null).like('tanggal', `____-${String(bulan).padStart(2, '0')}-__`);
-  }
-
   return query;
 }
 

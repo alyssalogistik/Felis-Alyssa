@@ -96,3 +96,10 @@ Row Level Security aktif pada semua tabel **tanpa policy apa pun**. Artinya
 kunci `anon` tidak bisa membaca maupun menulis. Seluruh akses lewat API server
 yang memegang `service_role`, sehingga kunci admin tidak pernah sampai ke
 browser.
+
+### Memverifikasi hasil migration
+
+Setelah menjalankan `supabase/migrations/`, jalankan `supabase/verifikasi.sql`
+di SQL Editor. Skrip itu hanya membaca katalog sistem — tidak menyisipkan,
+mengubah, maupun menghapus apa pun — dan aman diulang pada project yang sudah
+berisi data. Semua baris harus berbunyi `OK`.

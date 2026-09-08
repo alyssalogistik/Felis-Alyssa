@@ -75,7 +75,16 @@ create table if not exists transaksi_bank (
   dibuat_pada  timestamptz not null default now()
 );
 
+-- Bulan dan tahun disimpan sebagai kolom tersendiri, bukan dihitung saat query.
+-- Menyaring dengan extract() membuat indeks pada tanggal dilewati, sedangkan
+-- kolom tersimpan bisa diindeks dan disamakan langsung. Keduanya turunan dari
+-- tanggal, jadi tidak mungkin melenceng dari sumbernya.
+alter table transaksi_bank
+  add column if not exists bulan int generated always as (extract(month from tanggal)) stored,
+  add column if not exists tahun int generated always as (extract(year  from tanggal)) stored;
+
 create index if not exists idx_transaksi_tanggal on transaksi_bank (tanggal desc);
+create index if not exists idx_transaksi_periode on transaksi_bank (tahun, bulan);
 create index if not exists idx_transaksi_status_rekon on transaksi_bank (status_rekon);
 create index if not exists idx_transaksi_unggahan on transaksi_bank (unggahan_id);
 
@@ -159,8 +168,8 @@ as $$
          or coalesce(t.referensi, '') ilike '%' || p_cari || '%')
     -- Perbandingan terhadap tanggal null menghasilkan null, sehingga baris
     -- bertanggal rusak otomatis tidak ikut begitu ada filter waktu.
-    and (p_bulan  is null or extract(month from t.tanggal) = p_bulan)
-    and (p_tahun  is null or extract(year  from t.tanggal) = p_tahun)
+    and (p_bulan  is null or t.bulan = p_bulan)
+    and (p_tahun  is null or t.tahun = p_tahun)
     and (p_dari   is null or t.tanggal >= p_dari)
     and (p_sampai is null or t.tanggal <= p_sampai);
 $$;
