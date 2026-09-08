@@ -67,3 +67,32 @@ Isi ketiga variabel di **Railway → project → Variables**. Jangan meng-commit
 src/supabase.js        client publik & admin
 scripts/health-check.js  cek koneksi, tanpa dependency
 ```
+
+---
+
+## Aplikasi
+
+Dashboard pengiriman kendaraan: pesanan, trip, invoice, dan pelacakan resi.
+
+### Menyiapkan database
+
+Jalankan isi `supabase/migrations/` secara berurutan lewat **Supabase Dashboard
+→ SQL Editor**, mulai dari `0001`. Keduanya hanya membuat tabel baru dan tidak
+menyentuh data yang sudah ada.
+
+### Menjalankan
+
+```bash
+npm install
+npm start          # http://localhost:3000
+```
+
+Tanpa kredensial, server tetap menyala tetapi setiap endpoint `/api` menjawab
+503 dengan keterangan variabel mana yang kurang.
+
+### Keamanan
+
+Row Level Security aktif pada semua tabel **tanpa policy apa pun**. Artinya
+kunci `anon` tidak bisa membaca maupun menulis. Seluruh akses lewat API server
+yang memegang `service_role`, sehingga kunci admin tidak pernah sampai ke
+browser.
