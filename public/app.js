@@ -1,6 +1,11 @@
 // Aplikasi satu halaman tanpa framework: cukup kecil untuk tidak butuh build step,
 // jadi Railway bisa langsung menyajikannya apa adanya.
 
+import {
+  aman, ambil, el, kosong, pasangan, rupiah, tanggal, formatTanggalPolos,
+} from './bantuan.js';
+import { pasangKendaliRekonsiliasi, muatRekonsiliasi } from './rekonsiliasi.js';
+
 const STATUS = {
   baru:       'Baru',
   dispatched: 'Dispatched',
@@ -8,37 +13,6 @@ const STATUS = {
   selesai:    'Selesai',
   batal:      'Batal',
 };
-
-const rupiah = new Intl.NumberFormat('id-ID', {
-  style: 'currency', currency: 'IDR', maximumFractionDigits: 0,
-});
-
-const tanggal = new Intl.DateTimeFormat('id-ID', {
-  dateStyle: 'medium', timeStyle: 'short', timeZone: 'Asia/Jakarta',
-});
-
-/** Data dari database ditempel sebagai HTML, jadi harus dilucuti dulu. */
-function aman(nilai) {
-  return String(nilai ?? '').replace(/[&<>"']/g, (c) => (
-    { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]
-  ));
-}
-
-async function ambil(jalur, opsi) {
-  const respons = await fetch(`/api${jalur}`, {
-    headers: { 'Content-Type': 'application/json' },
-    ...opsi,
-  });
-  const isi = await respons.json().catch(() => ({}));
-  if (!respons.ok) throw new Error(isi.pesan ?? `Gagal memuat (HTTP ${respons.status}).`);
-  return isi;
-}
-
-const el = (id) => document.getElementById(id);
-
-function kosong(pesan) {
-  return `<p class="kosong">${aman(pesan)}</p>`;
-}
 
 function kartuPesanan(p) {
   const unit = [p.unit_merk, p.unit_tipe].filter(Boolean).join(' ');
@@ -127,11 +101,6 @@ async function muatPesanan(tambah = false) {
 }
 
 // --- Detail -----------------------------------------------------------------
-
-function pasangan(label, nilai) {
-  if (nilai === null || nilai === undefined || nilai === '') return '';
-  return `<div class="pasangan"><dt>${aman(label)}</dt><dd>${aman(nilai)}</dd></div>`;
-}
 
 async function muatDetail(id) {
   el('isi-detail').innerHTML = kosong('Memuat…');
@@ -248,7 +217,7 @@ async function muatTrip() {
 
 // --- Router -----------------------------------------------------------------
 
-const TAMPILAN = ['beranda', 'pesanan', 'detail', 'buat', 'lacak', 'trip'];
+const TAMPILAN = ['beranda', 'pesanan', 'detail', 'buat', 'lacak', 'trip', 'rekonsiliasi'];
 
 function arahkan() {
   const [jalur, kueri] = (location.hash.slice(2) || 'beranda').split('?');
@@ -264,6 +233,7 @@ function arahkan() {
   window.scrollTo(0, 0);
 
   if (nama === 'beranda') muatBeranda();
+  else if (nama === 'rekonsiliasi') muatRekonsiliasi();
   else if (nama === 'trip') muatTrip();
   else if (nama === 'detail') muatDetail(bagian[1]);
   else if (nama === 'pesanan') {
@@ -357,6 +327,8 @@ el('form-lacak').addEventListener('submit', async (peristiwa) => {
     hasil.innerHTML = kosong(error.message);
   }
 });
+
+pasangKendaliRekonsiliasi();
 
 window.addEventListener('hashchange', arahkan);
 arahkan();

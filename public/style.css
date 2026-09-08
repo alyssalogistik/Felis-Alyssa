@@ -269,3 +269,97 @@ textarea { resize: vertical; }
   main, .puncak { max-width: 720px; margin-inline: auto; }
   .angka { grid-template-columns: repeat(6, 1fr); }
 }
+
+/* --- Rekonsiliasi Bank --------------------------------------------------- */
+
+.tombol-blok { display: block; text-align: center; }
+.unggah { display: block; margin: 0; cursor: pointer; }
+
+.status-unggah {
+  margin: 12px 0 0;
+  color: var(--teks-redup);
+  font-size: 13px;
+  text-align: center;
+}
+.status-unggah.terisi { color: var(--teks); }
+
+.sejajar { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.sejajar.rapat { margin-top: 14px; }
+.sejajar .tombol-lembut, .sejajar .tombol { margin-top: 0; }
+
+/* Angka ringkasan mengikuti filter yang sedang aktif. */
+.ringkas {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 10px;
+}
+.ringkas div { padding: 10px 12px; background: var(--latar); border-radius: 11px; }
+.ringkas b { display: block; font-size: 17px; font-variant-numeric: tabular-nums; }
+.ringkas small { color: var(--teks-redup); font-size: 11.5px; }
+.ringkas .r-debit  b { color: var(--merah); }
+.ringkas .r-kredit b { color: var(--hijau); }
+.ringkas .r-net    b { color: var(--biru); }
+
+/* Tabel lebar digulir di dalam wadahnya sendiri; badan halaman tidak ikut geser. */
+.gulir-mendatar { overflow-x: auto; -webkit-overflow-scrolling: touch; margin: 0 -16px; padding: 0 16px; }
+
+.tabel { width: 100%; border-collapse: collapse; font-size: 13px; white-space: nowrap; }
+.tabel th, .tabel td { padding: 10px 12px; border-bottom: 1px solid var(--garis); text-align: left; }
+.tabel th {
+  position: sticky; top: 0;
+  background: var(--latar);
+  color: var(--teks-redup);
+  font-size: 11px; font-weight: 600;
+  text-transform: uppercase; letter-spacing: .5px;
+}
+.tabel tbody tr:active { background: var(--kartu); }
+.tabel .angka-kolom { text-align: right; font-variant-numeric: tabular-nums; }
+.tabel .nol { color: var(--teks-redup); }
+
+/* Keterangan panjang dipotong di tampilan; teks utuhnya ada di detail. */
+.tabel .keterangan {
+  max-width: 240px;
+  overflow: hidden; text-overflow: ellipsis;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.l-belum   { background: rgba(245,165,36,.15);  color: var(--aksen); }
+.l-sudah   { background: rgba(61,220,132,.15);  color: var(--hijau); }
+.l-selisih { background: rgba(255,92,92,.15);   color: var(--merah); }
+.l-periksa { background: rgba(255,145,60,.15);  color: #ff913c; }
+
+.tombol-mini {
+  padding: 5px 12px;
+  border: 1px solid var(--garis); border-radius: 999px;
+  background: var(--kartu-terang); color: var(--teks);
+  font-size: 12px; cursor: pointer;
+}
+
+dialog {
+  width: min(440px, calc(100vw - 32px));
+  padding: 20px;
+  border: 1px solid var(--garis); border-radius: var(--radius);
+  background: var(--kartu); color: var(--teks);
+}
+dialog::backdrop { background: rgba(0, 0, 0, .65); }
+dialog h3 { margin: 0 0 4px; font-size: 16px; }
+dialog .tombol-lembut, dialog .tombol { margin-top: 0; }
+
+.ringkas-modal {
+  margin: 0 0 12px;
+  padding: 10px 12px;
+  background: var(--latar); border-radius: 11px;
+  color: var(--teks-redup); font-size: 13px;
+}
+
+.catatan-mutu {
+  margin: 10px 0 0; padding: 10px 12px;
+  border-radius: 11px;
+  background: rgba(255,145,60,.1); color: #ff913c;
+  font-size: 12.5px;
+}
+
+@media (min-width: 640px) {
+  .ringkas { grid-template-columns: repeat(4, 1fr); }
+}

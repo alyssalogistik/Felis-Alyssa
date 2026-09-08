@@ -37,7 +37,7 @@
       <a href="#/pesanan?status=on_trip" class="pintas"><span>🚢</span>On-Trip</a>
       <a href="#/pesanan?status=selesai" class="pintas"><span>✅</span>Selesai</a>
       <a href="#/buat" class="pintas"><span>➕</span>Buat</a>
-      <a href="#/pesanan?status=batal" class="pintas"><span>⚠️</span>Batal</a>
+      <a href="#/rekonsiliasi" class="pintas"><span>🏦</span>Rekon Bank</a>
     </nav>
 
     <h2 class="judul">Ringkasan Pengiriman</h2>
@@ -141,6 +141,102 @@
     <h2 class="judul">Trip</h2>
     <div id="daftar-trip" class="daftar"></div>
   </section>
+
+  <!-- Rekonsiliasi Bank -->
+  <section id="tampilan-rekonsiliasi" class="tampilan" hidden>
+    <h2 class="judul">🏦 Rekonsiliasi Bank</h2>
+
+    <div class="panel">
+      <h3>Rekening Koran</h3>
+      <label class="unggah">
+        <input type="file" id="berkas-koran" accept=".xlsx,.csv" hidden>
+        <span class="tombol tombol-blok">+ Upload WPS / Excel</span>
+      </label>
+      <p id="status-unggah" class="status-unggah">Belum ada file</p>
+      <p id="pesan-unggah" class="pesan" hidden></p>
+    </div>
+
+    <form class="panel" id="filter-rekon">
+      <h3>Filter</h3>
+
+      <label>Nama / Keterangan
+        <input name="cari" type="search" placeholder="🔎 Cari nama atau kata kunci" autocomplete="off">
+      </label>
+
+      <div class="sejajar">
+        <label>Bulan
+          <select name="bulan">
+            <option value="">Semua</option>
+          </select>
+        </label>
+        <label>Tahun
+          <select name="tahun">
+            <option value="">Semua</option>
+          </select>
+        </label>
+      </div>
+
+      <div class="sejajar">
+        <label>Dari <input name="dari" type="date"></label>
+        <label>Sampai <input name="sampai" type="date"></label>
+      </div>
+
+      <div class="sejajar rapat">
+        <button type="button" id="reset-filter" class="tombol-lembut">Reset Filter</button>
+        <button type="button" id="ekspor-rekon" class="tombol-lembut">Export Hasil</button>
+      </div>
+    </form>
+
+    <div class="panel" id="ringkasan-rekon" aria-live="polite"></div>
+
+    <div class="gulir-mendatar">
+      <table class="tabel" id="tabel-rekon">
+        <thead>
+          <tr>
+            <th>Tanggal</th><th>Keterangan</th>
+            <th class="angka-kolom">Debit</th>
+            <th class="angka-kolom">Kredit</th>
+            <th class="angka-kolom">Saldo</th>
+            <th>Status</th><th>Aksi</th>
+          </tr>
+        </thead>
+        <tbody id="isi-tabel-rekon"></tbody>
+      </table>
+    </div>
+    <button id="muat-rekon" class="tombol-lembut" hidden>Muat lebih banyak</button>
+  </section>
+
+  <!-- Modal: catat rekon -->
+  <dialog id="modal-rekon">
+    <form method="dialog" id="form-rekon">
+      <h3 id="judul-modal">Rekon Transaksi</h3>
+      <p id="ringkas-modal" class="ringkas-modal"></p>
+
+      <label>Nomor invoice / order
+        <input name="referensi_rekon" autocomplete="off" placeholder="opsional">
+      </label>
+      <label>Nominal pembanding (Rp)
+        <input name="nominal_pembanding" type="number" min="0" step="0.01" inputmode="decimal"
+               placeholder="opsional — untuk cek selisih">
+      </label>
+      <label>Catatan
+        <textarea name="catatan_rekon" rows="2" placeholder="opsional"></textarea>
+      </label>
+
+      <p id="pesan-rekon" class="pesan" hidden></p>
+      <div class="sejajar rapat">
+        <button type="button" id="batal-modal" class="tombol-lembut">Tutup</button>
+        <button type="button" id="simpan-rekon" class="tombol">Simpan</button>
+      </div>
+    </form>
+  </dialog>
+
+  <!-- Modal: detail transaksi -->
+  <dialog id="modal-detail">
+    <div id="isi-modal-detail"></div>
+    <button type="button" id="tutup-detail" class="tombol-lembut">Tutup</button>
+  </dialog>
+
 </main>
 
 <nav class="bawah">

@@ -1,5 +1,6 @@
 import { Router } from 'express';
 import { createAdminClient } from './supabase.js';
+import rekonsiliasi from './rekonsiliasi/api.js';
 
 const db = createAdminClient();
 
@@ -163,5 +164,7 @@ api.get('/trip', jalur(async (_req, res) => {
   if (error) throw error;
   res.json({ data });
 }));
+
+api.use('/rekonsiliasi', rekonsiliasi);
 
 export default api;
