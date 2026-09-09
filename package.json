@@ -1,0 +1,25 @@
+{
+  "name": "felis-alyssa",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Alyssa Auto Logistik - manajemen pengiriman kendaraan",
+  "engines": {
+    "node": ">=18"
+  },
+  "scripts": {
+    "start": "node src/server.js",
+    "dev": "node --watch src/server.js",
+    "check": "node scripts/health-check.js",
+    "test": "node --test test/*.test.js"
+  },
+  "dependencies": {
+    "@supabase/supabase-js": "^2.45.0",
+    "dotenv": "^16.4.5",
+    "exceljs": "^4.4.0",
+    "express": "^4.19.2"
+  },
+  "overrides": {
+    "qs": "^6.16.0"
+  }
+}

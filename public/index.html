@@ -1,0 +1,330 @@
+<!doctype html>
+<html lang="id">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#0a0e1a">
+  <title>Alyssa Auto Logistik</title>
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Ccircle cx='16' cy='16' r='16' fill='%23f5a524'/%3E%3Ctext x='16' y='22' font-family='sans-serif' font-size='15' font-weight='bold' text-anchor='middle' fill='%231a1205'%3EAL%3C/text%3E%3C/svg%3E">
+  <link rel="stylesheet" href="/style.css">
+</head>
+<body>
+
+<header class="puncak">
+  <div class="puncak-baris">
+    <div class="lambang">AL</div>
+    <div class="puncak-teks">
+      <h1>ALYSSA AUTO LOGISTIK</h1>
+      <p id="salam">Selamat datang, Admin</p>
+    </div>
+  </div>
+  <p class="slogan">Kelola pengiriman kendaraan dengan lebih mudah</p>
+  <form class="cari" id="form-cari" role="search">
+    <input id="input-cari" type="search" placeholder="Cari No. Resi / Customer / Unit"
+           aria-label="Cari pesanan" autocomplete="off">
+  </form>
+</header>
+
+<main>
+  <!-- Beranda -->
+  <section id="tampilan-beranda" class="tampilan">
+    <h2 class="judul">Akses Cepat</h2>
+    <nav class="pintasan">
+      <a href="#/pesanan" class="pintas"><span>📦</span>Pesanan</a>
+      <a href="#/trip" class="pintas"><span>🚚</span>Trip</a>
+      <a href="#/pesanan?status=baru" class="pintas"><span>🆕</span>Baru</a>
+      <a href="#/lacak" class="pintas"><span>🔗</span>Tracking</a>
+      <a href="#/pesanan?status=on_trip" class="pintas"><span>🚢</span>On-Trip</a>
+      <a href="#/audit" class="pintas"><span>🔍</span>Audit</a>
+      <a href="#/buat" class="pintas"><span>➕</span>Buat</a>
+      <a href="#/rekonsiliasi" class="pintas"><span>🏦</span>Rekon Bank</a>
+    </nav>
+
+    <h2 class="judul">Ringkasan Pengiriman</h2>
+    <div class="angka" id="ringkasan" aria-live="polite"></div>
+
+    <h2 class="judul">
+      Pengiriman Aktif
+      <a href="#/pesanan" class="tautan">Lihat Semua</a>
+    </h2>
+    <div id="aktif" class="daftar"></div>
+  </section>
+
+  <!-- Daftar pesanan -->
+  <section id="tampilan-pesanan" class="tampilan" hidden>
+    <h2 class="judul" id="judul-pesanan">Pesanan</h2>
+    <div class="saring" id="saring"></div>
+    <div id="daftar-pesanan" class="daftar"></div>
+    <button id="muat-lagi" class="tombol-lembut" hidden>Muat lebih banyak</button>
+  </section>
+
+  <!-- Detail pesanan -->
+  <section id="tampilan-detail" class="tampilan" hidden>
+    <a href="#/pesanan" class="kembali">&larr; Kembali</a>
+    <div id="isi-detail"></div>
+  </section>
+
+  <!-- Buat pesanan -->
+  <section id="tampilan-buat" class="tampilan" hidden>
+    <h2 class="judul">Buat Pesanan</h2>
+    <form id="form-buat" class="formulir">
+      <fieldset>
+        <legend>Customer</legend>
+        <label>Nama customer <span class="wajib">*</span>
+          <input name="customer_nama" required autocomplete="off">
+        </label>
+        <label>Telepon customer
+          <input name="customer_telepon" type="tel" autocomplete="off">
+        </label>
+        <label>Nama penerima
+          <input name="penerima_nama" autocomplete="off">
+        </label>
+        <label>Telepon penerima
+          <input name="penerima_telepon" type="tel" autocomplete="off">
+        </label>
+      </fieldset>
+
+      <fieldset>
+        <legend>Unit kendaraan</legend>
+        <label>Merk <span class="wajib">*</span>
+          <input name="unit_merk" required placeholder="Daihatsu" autocomplete="off">
+        </label>
+        <label>Tipe
+          <input name="unit_tipe" placeholder="Gran Max" autocomplete="off">
+        </label>
+        <label>Nomor polisi
+          <input name="unit_nopol" placeholder="B 1234 XYZ" autocomplete="off">
+        </label>
+        <label>Tahun
+          <input name="unit_tahun" type="number" min="1900" max="2100" inputmode="numeric">
+        </label>
+        <label>Warna
+          <input name="unit_warna" autocomplete="off">
+        </label>
+      </fieldset>
+
+      <fieldset>
+        <legend>Pengiriman</legend>
+        <label>Asal <span class="wajib">*</span>
+          <input name="asal" required placeholder="Jakarta" autocomplete="off">
+        </label>
+        <label>Tujuan <span class="wajib">*</span>
+          <input name="tujuan" required placeholder="Makassar" autocomplete="off">
+        </label>
+        <label>Harga (Rp)
+          <input name="harga" type="number" min="0" step="1000" inputmode="numeric">
+        </label>
+        <label>Catatan
+          <textarea name="catatan" rows="3"></textarea>
+        </label>
+      </fieldset>
+
+      <p id="pesan-buat" class="pesan" hidden></p>
+      <button type="submit" class="tombol">Simpan Pesanan</button>
+    </form>
+  </section>
+
+  <!-- Lacak resi -->
+  <section id="tampilan-lacak" class="tampilan" hidden>
+    <h2 class="judul">Lacak Pengiriman</h2>
+    <form id="form-lacak" class="formulir">
+      <label>Nomor resi
+        <input name="no_resi" placeholder="ALS-2609-0001" required autocomplete="off">
+      </label>
+      <button type="submit" class="tombol">Lacak</button>
+    </form>
+    <div id="hasil-lacak"></div>
+  </section>
+
+  <!-- Trip -->
+  <section id="tampilan-trip" class="tampilan" hidden>
+    <h2 class="judul">Trip</h2>
+    <div id="daftar-trip" class="daftar"></div>
+  </section>
+
+  <!-- Rekonsiliasi Bank -->
+  <section id="tampilan-rekonsiliasi" class="tampilan" hidden>
+    <h2 class="judul">🏦 Rekonsiliasi Bank</h2>
+
+    <div class="panel">
+      <h3>Rekening Koran</h3>
+      <label class="unggah">
+        <input type="file" id="berkas-koran" accept=".xlsx,.csv" hidden>
+        <span class="tombol tombol-blok">+ Upload WPS / Excel</span>
+      </label>
+      <p id="status-unggah" class="status-unggah">Belum ada file</p>
+      <p id="pesan-unggah" class="pesan" hidden></p>
+    </div>
+
+    <form class="panel" id="filter-rekon">
+      <h3>Filter</h3>
+
+      <label>Nama / Keterangan
+        <input name="cari" type="search" placeholder="🔎 Cari nama atau kata kunci" autocomplete="off">
+      </label>
+
+      <div class="sejajar">
+        <label>Bulan
+          <select name="bulan">
+            <option value="">Semua</option>
+          </select>
+        </label>
+        <label>Tahun
+          <select name="tahun">
+            <option value="">Semua</option>
+          </select>
+        </label>
+      </div>
+
+      <div class="sejajar">
+        <label>Dari <input name="dari" type="date"></label>
+        <label>Sampai <input name="sampai" type="date"></label>
+      </div>
+
+      <div class="sejajar rapat">
+        <button type="button" id="reset-filter" class="tombol-lembut">Reset Filter</button>
+        <button type="button" id="ekspor-rekon" class="tombol-lembut">Export Hasil</button>
+      </div>
+    </form>
+
+    <div class="panel" id="ringkasan-rekon" aria-live="polite"></div>
+
+    <div class="gulir-mendatar">
+      <table class="tabel" id="tabel-rekon">
+        <thead>
+          <tr>
+            <th>Tanggal</th><th>Keterangan</th>
+            <th class="angka-kolom">Debit</th>
+            <th class="angka-kolom">Kredit</th>
+            <th class="angka-kolom">Saldo</th>
+            <th>Status</th><th>Aksi</th>
+          </tr>
+        </thead>
+        <tbody id="isi-tabel-rekon"></tbody>
+      </table>
+    </div>
+    <button id="muat-rekon" class="tombol-lembut" hidden>Muat lebih banyak</button>
+  </section>
+
+  <!-- Modal: catat rekon -->
+  <dialog id="modal-rekon">
+    <form method="dialog" id="form-rekon">
+      <h3 id="judul-modal">Rekon Transaksi</h3>
+      <p id="ringkas-modal" class="ringkas-modal"></p>
+
+      <label>Nomor invoice / order
+        <input name="referensi_rekon" autocomplete="off" placeholder="opsional">
+      </label>
+      <label>Nominal pembanding (Rp)
+        <input name="nominal_pembanding" type="number" min="0" step="0.01" inputmode="decimal"
+               placeholder="opsional — untuk cek selisih">
+      </label>
+      <label>Catatan
+        <textarea name="catatan_rekon" rows="2" placeholder="opsional"></textarea>
+      </label>
+
+      <p id="pesan-rekon" class="pesan" hidden></p>
+      <div class="sejajar rapat">
+        <button type="button" id="batal-modal" class="tombol-lembut">Tutup</button>
+        <button type="button" id="simpan-rekon" class="tombol">Simpan</button>
+      </div>
+    </form>
+  </dialog>
+
+  <!-- Modal: detail transaksi -->
+  <dialog id="modal-detail">
+    <div id="isi-modal-detail"></div>
+    <button type="button" id="tutup-detail" class="tombol-lembut">Tutup</button>
+  </dialog>
+
+
+  <!-- Audit pembayaran supplier -->
+  <section id="tampilan-audit" class="tampilan" hidden>
+    <h2 class="judul">🔍 Audit Pembayaran Supplier</h2>
+
+    <div class="panel">
+      <h3>Daftar Tagihan Supplier</h3>
+      <label class="unggah">
+        <input type="file" id="berkas-tagihan" accept=".xlsx,.csv" hidden>
+        <span class="tombol tombol-blok">+ Upload Daftar Tagihan</span>
+      </label>
+      <p id="status-tagihan" class="status-unggah">Belum ada tagihan</p>
+      <p id="pesan-tagihan" class="pesan" hidden></p>
+      <button type="button" id="jalankan-audit" class="tombol-lembut">Jalankan Auto-Match</button>
+      <p id="pesan-audit" class="pesan" hidden></p>
+    </div>
+
+    <form class="panel" id="filter-audit">
+      <h3>Filter</h3>
+      <label>Supplier
+        <input name="pemasok" type="search" placeholder="🔎 Nama supplier" autocomplete="off">
+      </label>
+      <div class="sejajar">
+        <label>Bulan
+          <select name="bulan"><option value="">Semua</option></select>
+        </label>
+        <label>Tahun
+          <select name="tahun"><option value="">Semua</option></select>
+        </label>
+      </div>
+      <label>Status
+        <select name="status">
+          <option value="">Semua status</option>
+          <option value="MATCH">MATCH</option>
+          <option value="KURANG_BAYAR">KURANG BAYAR</option>
+          <option value="LEBIH_BAYAR">LEBIH BAYAR</option>
+          <option value="INVOICE_BELUM_ADA_TRANSFER">INVOICE BELUM ADA TRANSFER</option>
+          <option value="TRANSFER_TANPA_INVOICE">TRANSFER TANPA INVOICE</option>
+          <option value="PERLU_REVIEW">PERLU REVIEW</option>
+        </select>
+      </label>
+      <label class="sebaris">
+        <input type="checkbox" name="hanya_selisih" value="1" checked>
+        Tampilkan hanya yang bermasalah
+      </label>
+      <div class="sejajar rapat">
+        <button type="button" id="reset-audit" class="tombol-lembut">Reset Filter</button>
+        <button type="button" id="ekspor-audit" class="tombol-lembut">Export Hasil</button>
+      </div>
+    </form>
+
+    <div class="panel" id="ringkasan-audit" aria-live="polite"></div>
+
+    <div class="gulir-mendatar">
+      <table class="tabel" id="tabel-audit">
+        <thead>
+          <tr>
+            <th>Supplier</th><th>No Invoice</th><th>Tgl Invoice</th>
+            <th class="angka-kolom">Gross</th>
+            <th class="angka-kolom">PPh</th>
+            <th class="angka-kolom">Net Seharusnya</th>
+            <th class="angka-kolom">Transfer Bank</th>
+            <th class="angka-kolom">Selisih</th>
+            <th>Status</th>
+          </tr>
+        </thead>
+        <tbody id="isi-tabel-audit"></tbody>
+      </table>
+    </div>
+    <button id="muat-audit" class="tombol-lembut" hidden>Muat lebih banyak</button>
+  </section>
+
+  <!-- Modal detail audit -->
+  <dialog id="modal-audit">
+    <div id="isi-modal-audit"></div>
+    <button type="button" id="tutup-audit" class="tombol-lembut">Tutup</button>
+  </dialog>
+
+</main>
+
+<nav class="bawah">
+  <a href="#/beranda" data-nav="beranda"><span>🏠</span>Beranda</a>
+  <a href="#/pesanan" data-nav="pesanan"><span>📦</span>Pesanan</a>
+  <a href="#/buat" data-nav="buat" class="buat"><span>+</span></a>
+  <a href="#/trip" data-nav="trip"><span>🚚</span>Trip</a>
+  <a href="#/lacak" data-nav="lacak"><span>🔗</span>Lacak</a>
+</nav>
+
+<script type="module" src="/app.js"></script>
+</body>
+</html>
