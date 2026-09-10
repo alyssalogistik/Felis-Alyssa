@@ -29,6 +29,23 @@ dicetak ke log. Penjaga itu berjalan sebelum satu pun query terkirim.
 `scripts/health-check.js` mencetak project ref yang sedang dituju dan gagal
 keras bila tidak cocok. Jalankan itu sebelum migration.
 
+## Memasang skema
+
+`supabase/migrations/` adalah sumber kebenaran. `supabase/setup-lengkap.sql`
+**dihasilkan** dari sana oleh `node scripts/bangun-setup.js` — jangan disunting
+langsung; ubah migration-nya lalu bangun ulang.
+
+Berkas hasilnya sengaja berupa **satu** blok `DO`, bukan rangkaian perintah.
+SQL Editor Supabase menjalankan hanya teks yang tersorot bila ada seleksi
+aktif, dan di layar sentuh seleksi liar mudah terjadi tanpa disadari. Sebagai
+banyak perintah, sorotan yang meleset memasang sebagian skema dan menyisakan
+database setengah jadi; sebagai satu perintah, hasilnya hanya seluruhnya masuk
+atau tidak ada yang berubah sama sekali.
+
+Baris terakhirnya memanggil `pg_notify('pgrst', 'reload schema')`. Tanpa itu
+PostgREST masih memakai peta skema lama dan tetap melaporkan tabel baru sebagai
+`Could not find the table ... in the schema cache` walaupun tabelnya sudah ada.
+
 ## Arsitektur
 
 Tanpa framework dan tanpa build step — disengaja, jangan ditambahkan tanpa alasan.

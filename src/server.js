@@ -46,8 +46,33 @@ if (kurang.length > 0) {
   }
 }
 
+// Tabel yang belum dibuat adalah satu-satunya kegagalan yang penyebabnya ada di
+// luar aplikasi dan obatnya satu langkah pasti. Pesan mentah PostgREST untuk
+// kasus ini ("Could not find the table ... in the schema cache") menyuruh
+// pembacanya menebak, jadi diterjemahkan menjadi instruksi.
+function tabelBelumDibuat(error) {
+  const kode = error?.code;
+  const pesan = String(error?.message ?? '');
+  return (
+    kode === 'PGRST205' ||           // tidak ada di peta skema PostgREST
+    kode === '42P01' ||              // undefined_table dari PostgreSQL
+    /schema cache/i.test(pesan) ||
+    /relation ".*" does not exist/i.test(pesan)
+  );
+}
+
 app.use((error, _req, res, _next) => {
   console.error(error);
+
+  if (tabelBelumDibuat(error)) {
+    return res.status(503).json({
+      pesan:
+        'Database belum disiapkan: tabelnya belum dibuat. Jalankan isi berkas ' +
+        'supabase/setup-lengkap.sql sekali di Supabase SQL Editor, lalu muat ulang halaman ini.',
+      rincian: error.message,
+    });
+  }
+
   res.status(500).json({ pesan: error.message ?? 'Terjadi kesalahan di server.' });
 });
 
