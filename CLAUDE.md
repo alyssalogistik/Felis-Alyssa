@@ -213,6 +213,20 @@ Aturan tata letak A4 ada di `laporan.js` — murni, tanpa pdfkit — supaya
 pembungkusan keterangan dan pemenggalan halaman bisa diuji tanpa membuat satu
 PDF pun. `cetak.js` hanya menggambar.
 
+Setelah "Simpan PDF" berhasil, hasil di layar dikosongkan: tabel, ringkasan,
+kop cetak, dan keadaan paginasi kembali ke halaman satu. Isian filter sengaja
+dibiarkan.
+
+Karena itu unduhannya lewat `fetch` lalu blob, bukan navigasi biasa. Navigasi
+tidak memberi tahu halaman apakah berkasnya jadi atau gagal, sehingga layar akan
+ikut kosong walaupun laporannya tidak pernah terbentuk. **Gagal menyimpan berarti
+hasil dibiarkan apa adanya.**
+
+Pengosongan itu tampilan belaka — tidak satu baris pun dihapus dari
+`transaksi_bank`. Pesan kosongnya menyebutkan bahwa hasil bisa dimunculkan lagi
+dengan mencari ulang; tanpa itu, layar yang tiba-tiba kosong terbaca seperti
+datanya ikut terhapus.
+
 Dua hal yang mudah salah:
 
 - **Lebar kolom diukur, bukan dikira-kira.** Kolom yang lebih sempit dari
