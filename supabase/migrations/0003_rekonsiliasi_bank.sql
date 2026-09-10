@@ -131,8 +131,7 @@ begin
 end;
 $$;
 
-drop trigger if exists trg_transaksi_status_rekon on transaksi_bank;
-create trigger trg_transaksi_status_rekon
+create or replace trigger trg_transaksi_status_rekon
   before insert or update of nominal_pembanding, status_rekon, debit, kredit
   on transaksi_bank
   for each row execute function hitung_status_rekon();

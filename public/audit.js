@@ -129,6 +129,72 @@ async function muatStatusTagihan() {
   }
 }
 
+/**
+ * Berapa transaksi bank yang sudah tersimpan.
+ *
+ * Angka ini yang memberi tahu apakah Auto-Match punya bahan untuk bekerja.
+ * Tanpa transaksi bank, seluruh tagihan akan dilaporkan belum ada transfernya —
+ * benar secara data, tetapi menyesatkan sebagai kesimpulan audit.
+ */
+async function muatStatusKoran() {
+  const kotak = el('status-koran-audit');
+  if (!kotak) return;
+  try {
+    const { total } = await ambil('/rekonsiliasi/transaksi?batas=1');
+    kotak.classList.toggle('terisi', total > 0);
+    kotak.textContent = total > 0
+      ? `${total} transaksi bank tersimpan`
+      : 'Belum ada transaksi bank';
+  } catch {
+    // Status hanya pelengkap; kegagalannya tidak perlu menutupi tabel.
+  }
+}
+
+/**
+ * Mengunggah rekening koran dari halaman audit.
+ *
+ * Menembak endpoint unggah milik Rekonsiliasi Bank, bukan endpoint tersendiri.
+ * Audit dan rekonsiliasi membaca transaksi dari tabel yang sama, jadi dua jalur
+ * penyimpanan akan membuat satu rekening koran yang sama masuk dua kali dan
+ * mustahil dicocokkan dengan benar.
+ */
+async function unggahKoran(berkas) {
+  const kotak = el('pesan-koran-audit');
+  const tampil = (kelas, teks) => {
+    kotak.className = `pesan ${kelas}`;
+    kotak.textContent = teks;
+    kotak.hidden = false;
+  };
+  tampil('', `Membaca ${berkas.name}\u2026`);
+
+  try {
+    const respons = await fetch('/api/rekonsiliasi/unggah', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/octet-stream',
+        'X-Nama-Berkas': encodeURIComponent(berkas.name),
+      },
+      body: berkas,
+    });
+    const isi = await respons.json().catch(() => ({}));
+    if (!respons.ok) throw new Error(isi.pesan ?? `Gagal mengunggah (HTTP ${respons.status}).`);
+
+    const r = isi.ringkasan;
+    const catatan = [];
+    if (r.perlu_diperiksa > 0) catatan.push(`${r.perlu_diperiksa} perlu diperiksa`);
+    if (r.duplikat > 0) catatan.push(`${r.duplikat} duplikat`);
+    if (isi.pernah_diunggah) catatan.push('berkas ini pernah diunggah sebelumnya');
+
+    tampil('berhasil',
+      `${r.total} transaksi diimpor dari ${isi.sheet ?? 'berkas'}` +
+      (catatan.length > 0 ? ` (${catatan.join(', ')}).` : '.'));
+
+    await muatStatusKoran();
+  } catch (error) {
+    tampil('gagal', error.message);
+  }
+}
+
 async function unggahTagihan(berkas) {
   const kotak = el('pesan-tagihan');
   const tampil = (kelas, teks) => {
@@ -244,6 +310,12 @@ export function pasangKendaliAudit() {
     ...Array.from({ length: 7 }, (_, i) => String(tahunIni + 1 - i)).map((t) => new Option(t, t))
   );
 
+  el('berkas-koran-audit').addEventListener('change', (peristiwa) => {
+    const berkas = peristiwa.target.files?.[0];
+    if (berkas) unggahKoran(berkas);
+    peristiwa.target.value = '';
+  });
+
   el('berkas-tagihan').addEventListener('change', (peristiwa) => {
     const berkas = peristiwa.target.files?.[0];
     if (berkas) unggahTagihan(berkas);
@@ -279,6 +351,6 @@ export function pasangKendaliAudit() {
 }
 
 export async function muatAudit() {
-  await muatStatusTagihan();
+  await Promise.all([muatStatusKoran(), muatStatusTagihan()]);
   await muatHasil();
 }

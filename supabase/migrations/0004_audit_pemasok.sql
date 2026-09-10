@@ -160,7 +160,9 @@ create or replace function ringkasan_audit_pemasok(
   p_pemasok text default null,
   p_bulan   int  default null,
   p_tahun   int  default null,
-  p_status  text default null
+  p_status  text default null,
+  p_dari    date default null,
+  p_sampai  date default null
 )
 returns table (
   total_tagihan bigint,
@@ -185,7 +187,9 @@ as $$
   where (p_pemasok is null or p_pemasok = '' or a.pemasok ilike '%' || p_pemasok || '%')
     and (p_bulan  is null or a.bulan = p_bulan)
     and (p_tahun  is null or a.tahun = p_tahun)
-    and (p_status is null or p_status = '' or a.status = p_status);
+    and (p_status is null or p_status = '' or a.status = p_status)
+    and (p_dari   is null or a.tanggal_invoice >= p_dari)
+    and (p_sampai is null or a.tanggal_invoice <= p_sampai);
 $$;
 
 -- ---------------------------------------------------------------------------

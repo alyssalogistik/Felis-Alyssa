@@ -149,8 +149,8 @@
     <div class="panel">
       <h3>Rekening Koran</h3>
       <label class="unggah">
-        <input type="file" id="berkas-koran" accept=".xlsx,.csv" hidden>
-        <span class="tombol tombol-blok">+ Upload WPS / Excel</span>
+        <input type="file" id="berkas-koran" accept=".pdf,.xlsx,.csv" hidden>
+        <span class="tombol tombol-blok">+ Upload PDF BCA / WPS / Excel</span>
       </label>
       <p id="status-unggah" class="status-unggah">Belum ada file</p>
       <p id="pesan-unggah" class="pesan" hidden></p>
@@ -243,6 +243,20 @@
     <h2 class="judul">🔍 Audit Pembayaran Supplier</h2>
 
     <div class="panel">
+      <h3>Rekening Koran BCA</h3>
+      <p class="keterangan-panel">
+        Menyimpan ke data transaksi bank yang sama dengan menu Rekonsiliasi Bank.
+        Rekening koran yang sudah diunggah di sana tidak perlu diunggah ulang.
+      </p>
+      <label class="unggah">
+        <input type="file" id="berkas-koran-audit" accept=".pdf,.xlsx,.csv" hidden>
+        <span class="tombol tombol-blok">+ Upload Rekening Koran BCA</span>
+      </label>
+      <p id="status-koran-audit" class="status-unggah">Belum ada transaksi bank</p>
+      <p id="pesan-koran-audit" class="pesan" hidden></p>
+    </div>
+
+    <div class="panel">
       <h3>Daftar Tagihan Supplier</h3>
       <label class="unggah">
         <input type="file" id="berkas-tagihan" accept=".xlsx,.csv" hidden>
@@ -265,6 +279,14 @@
         </label>
         <label>Tahun
           <select name="tahun"><option value="">Semua</option></select>
+        </label>
+      </div>
+      <div class="sejajar">
+        <label>Dari Tanggal
+          <input name="dari" type="date">
+        </label>
+        <label>Sampai Tanggal
+          <input name="sampai" type="date">
         </label>
       </div>
       <label>Status
