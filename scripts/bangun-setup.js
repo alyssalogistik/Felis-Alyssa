@@ -43,10 +43,14 @@ const bagian = urutan.map((berkas) =>
   tagUlang(ringkas(readFileSync(join(akar, 'supabase/migrations', berkas), 'utf8')))
 );
 
+// Peringatan "destructive operations" di SQL Editor Supabase memindai teks
+// mentah, komentar ikut terbaca. Kalimat yang menyebutkan operasi berbahaya
+// untuk menyatakan bahwa operasi itu TIDAK ada justru memicu peringatannya
+// sendiri, jadi kepala berkas ini sengaja tidak menyebut kata-kata tersebut.
 const isi = `-- SETUP DATABASE ALYSSA AUTO LOGISTIK
 -- Satu perintah. Salin seluruhnya, tempel, Run.
--- Hanya membuat tabel/fungsi/view baru: tidak ada drop table, delete,
--- maupun penimpaan data yang sudah ada. Aman dijalankan berulang.
+-- Hanya menambah tabel, fungsi, view, indeks, dan trigger baru.
+-- Aman dijalankan berulang; data yang sudah ada tidak tersentuh.
 do $migrasi$
 begin
 ${bagian.join('\n')}

@@ -1,7 +1,7 @@
 -- SETUP DATABASE ALYSSA AUTO LOGISTIK
 -- Satu perintah. Salin seluruhnya, tempel, Run.
--- Hanya membuat tabel/fungsi/view baru: tidak ada drop table, delete,
--- maupun penimpaan data yang sudah ada. Aman dijalankan berulang.
+-- Hanya menambah tabel, fungsi, view, indeks, dan trigger baru.
+-- Aman dijalankan berulang; data yang sudah ada tidak tersentuh.
 do $migrasi$
 begin
 --
@@ -123,12 +123,10 @@ begin
   return new;
 end;
 $fn$;
-drop trigger if exists trg_pesanan_no_resi on pesanan;
-create trigger trg_pesanan_no_resi
+create or replace trigger trg_pesanan_no_resi
   before insert on pesanan
   for each row execute function set_no_resi();
-drop trigger if exists trg_invoice_no_invoice on invoice;
-create trigger trg_invoice_no_invoice
+create or replace trigger trg_invoice_no_invoice
   before insert on invoice
   for each row execute function set_no_invoice();
 create or replace function sentuh_diubah_pada()
@@ -140,16 +138,13 @@ begin
   return new;
 end;
 $fn$;
-drop trigger if exists trg_pesanan_diubah on pesanan;
-create trigger trg_pesanan_diubah
+create or replace trigger trg_pesanan_diubah
   before update on pesanan
   for each row execute function sentuh_diubah_pada();
-drop trigger if exists trg_trip_diubah on trip;
-create trigger trg_trip_diubah
+create or replace trigger trg_trip_diubah
   before update on trip
   for each row execute function sentuh_diubah_pada();
-drop trigger if exists trg_invoice_diubah on invoice;
-create trigger trg_invoice_diubah
+create or replace trigger trg_invoice_diubah
   before update on invoice
   for each row execute function sentuh_diubah_pada();
 --
@@ -165,8 +160,7 @@ begin
   return new;
 end;
 $fn$;
-drop trigger if exists trg_pesanan_jejak_status on pesanan;
-create trigger trg_pesanan_jejak_status
+create or replace trigger trg_pesanan_jejak_status
   after insert or update of status on pesanan
   for each row execute function catat_perubahan_status();
 --
@@ -251,8 +245,7 @@ begin
   return new;
 end;
 $fn$;
-drop trigger if exists trg_transaksi_status_rekon on transaksi_bank;
-create trigger trg_transaksi_status_rekon
+create or replace trigger trg_transaksi_status_rekon
   before insert or update of nominal_pembanding, status_rekon, debit, kredit
   on transaksi_bank
   for each row execute function hitung_status_rekon();

@@ -41,13 +41,11 @@ begin
 end;
 $$;
 
-drop trigger if exists trg_pesanan_no_resi on pesanan;
-create trigger trg_pesanan_no_resi
+create or replace trigger trg_pesanan_no_resi
   before insert on pesanan
   for each row execute function set_no_resi();
 
-drop trigger if exists trg_invoice_no_invoice on invoice;
-create trigger trg_invoice_no_invoice
+create or replace trigger trg_invoice_no_invoice
   before insert on invoice
   for each row execute function set_no_invoice();
 
@@ -65,18 +63,15 @@ begin
 end;
 $$;
 
-drop trigger if exists trg_pesanan_diubah on pesanan;
-create trigger trg_pesanan_diubah
+create or replace trigger trg_pesanan_diubah
   before update on pesanan
   for each row execute function sentuh_diubah_pada();
 
-drop trigger if exists trg_trip_diubah on trip;
-create trigger trg_trip_diubah
+create or replace trigger trg_trip_diubah
   before update on trip
   for each row execute function sentuh_diubah_pada();
 
-drop trigger if exists trg_invoice_diubah on invoice;
-create trigger trg_invoice_diubah
+create or replace trigger trg_invoice_diubah
   before update on invoice
   for each row execute function sentuh_diubah_pada();
 
@@ -100,8 +95,7 @@ begin
 end;
 $$;
 
-drop trigger if exists trg_pesanan_jejak_status on pesanan;
-create trigger trg_pesanan_jejak_status
+create or replace trigger trg_pesanan_jejak_status
   after insert or update of status on pesanan
   for each row execute function catat_perubahan_status();
 
