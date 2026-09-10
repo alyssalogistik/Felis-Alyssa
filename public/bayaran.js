@@ -91,7 +91,12 @@ export async function cariBayaran(lanjut = false) {
   parameter.set('batas', String(BATAS));
   parameter.set('mulai', String(mulai));
 
-  if (!lanjut) kotak.innerHTML = `<tr><td colspan="6">${kosong('Mencari…')}</td></tr>`;
+  // Pesan "hasil dikosongkan" milik pencarian sebelumnya tidak boleh menempel
+  // di atas hasil yang baru.
+  if (!lanjut) {
+    kotak.innerHTML = `<tr><td colspan="6">${kosong('Mencari…')}</td></tr>`;
+    pesanCetak('', '');
+  }
 
   try {
     const hasil = await ambil(`/rekonsiliasi/transaksi?${parameter}`);
@@ -218,6 +223,78 @@ async function cetakLaporan() {
   }
 }
 
+/**
+ * Nama berkas dari header Content-Disposition.
+ *
+ * Server tetap satu-satunya penentu nama berkas; unduhan lewat blob hanya
+ * meneruskannya. Kalau headernya tidak terbaca, dipakai nama cadangan yang
+ * masih jelas maksudnya alih-alih membiarkan peramban memberi nama acak.
+ */
+function namaDariHeader(header) {
+  const cocok = /filename="?([^";]+)"?/i.exec(header ?? '');
+  return cocok ? cocok[1] : 'Audit-Pembayaran-Supplier.pdf';
+}
+
+/**
+ * Mengosongkan hasil yang sedang tampil.
+ *
+ * Hanya tampilan. Transaksi bank di database tidak disentuh sama sekali, dan
+ * pengosongan ini bisa dibatalkan hanya dengan mencari lagi — karena itu
+ * pesannya menyebutkan hal tersebut. Tanpa penjelasan itu, layar yang tiba-tiba
+ * kosong sesudah menyimpan akan terbaca seperti datanya ikut terhapus.
+ */
+function kosongkanHasil() {
+  mulai = 0;
+  total = 0;
+
+  el('isi-tabel-bayaran').innerHTML =
+    `<tr><td colspan="6">${kosong('Hasil dikosongkan setelah PDF disimpan. Ubah filter atau tekan Reset Filter untuk mencari lagi.')}</td></tr>`;
+  el('ringkasan-bayaran').innerHTML = '';
+  el('muat-bayaran').hidden = true;
+
+  const kop = el('kop-cetak');
+  if (kop) kop.innerHTML = '';
+}
+
+/**
+ * Mengunduh laporan PDF, lalu mengosongkan hasil di layar.
+ *
+ * Unduhannya lewat fetch, bukan navigasi biasa, justru karena syaratnya: hasil
+ * hanya boleh dikosongkan bila penyimpanan berhasil. Navigasi biasa tidak
+ * memberi tahu halaman apakah berkasnya jadi atau gagal, sehingga layar akan
+ * ikut kosong walaupun laporannya tidak pernah terbentuk.
+ */
+async function simpanPdf() {
+  const tombol = el('simpan-pdf');
+  tombol.disabled = true;
+  pesanCetak('', 'Menyiapkan PDF…');
+
+  let alamatObjek = null;
+  try {
+    const respons = await fetch(alamatLaporan());
+    if (!respons.ok) throw new Error(`Gagal menyimpan PDF (HTTP ${respons.status}).`);
+
+    const berkas = await respons.blob();
+    alamatObjek = URL.createObjectURL(berkas);
+
+    const tautan = document.createElement('a');
+    tautan.href = alamatObjek;
+    tautan.download = namaDariHeader(respons.headers.get('Content-Disposition'));
+    document.body.append(tautan);
+    tautan.click();
+    tautan.remove();
+
+    kosongkanHasil();
+    pesanCetak('berhasil', 'PDF berhasil disimpan. Hasil transaksi telah dikosongkan.');
+  } catch (error) {
+    // Gagal menyimpan berarti hasil di layar dibiarkan apa adanya.
+    pesanCetak('gagal', error.message);
+  } finally {
+    if (alamatObjek) setTimeout(() => URL.revokeObjectURL(alamatObjek), 60000);
+    tombol.disabled = false;
+  }
+}
+
 export function pasangKendaliBayaran() {
   const formulir = el('cari-bayaran');
   if (!formulir) return;
@@ -247,7 +324,6 @@ export function pasangKendaliBayaran() {
 
   el('muat-bayaran').addEventListener('click', () => cariBayaran(true));
 
-  // Unduhan langsung: nama berkasnya ditentukan server lewat Content-Disposition.
-  el('simpan-pdf').addEventListener('click', () => window.location.assign(alamatLaporan()));
+  el('simpan-pdf').addEventListener('click', simpanPdf);
   el('cetak-bayaran').addEventListener('click', cetakLaporan);
 }
