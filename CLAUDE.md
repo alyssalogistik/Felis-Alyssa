@@ -188,6 +188,41 @@ Aturan penyaringan hidup di dua tempat yang sengaja dijaga cermin: `saring()` di
 `saringan.js` (murni, teruji) dan `terapkanKriteria()` di `api.js` (dijalankan
 database). Kalau salah satu diubah, ubah keduanya.
 
+## Cetak dan Simpan PDF
+
+Dokumen resminya dibuat di **server** (`src/rekonsiliasi/cetak.js`, pdfkit),
+bukan dari tabel yang sedang tampil. Layar hanya memuat satu halaman hasil,
+sedangkan laporan harus memuat seluruh transaksi yang cocok dengan filter.
+
+Kedua tombol memakai laporan yang sama. "Simpan PDF" mengunduhnya langsung;
+"Cetak" mengambilnya sebagai blob, memuatnya ke iframe tersembunyi, lalu
+memanggil `print()`. Peramban seluler yang menolak mencetak dari iframe
+tersembunyi dilayani dengan membuka laporan di tab baru.
+
+Alasan "Cetak" tidak memakai stylesheet cetak sebagai jalur utamanya: CSS di
+peramban tidak bisa menghitung nomor halaman. `@page` margin box yang
+menyediakan `counter(page)` tidak didukung Chrome, sehingga footer
+"Halaman X / Y" mustahil dihasilkan dari halaman web. Selain itu tabel di layar
+hanya memuat 50 baris pertama.
+
+Stylesheet cetak di `style.css` tetap ada sebagai jaring pengaman: siapa pun
+yang menekan Ctrl+P pada halaman akan mendapat kertas putih tanpa tema gelap
+dan tanpa menu, bukan tangkapan layar aplikasi.
+
+Aturan tata letak A4 ada di `laporan.js` — murni, tanpa pdfkit — supaya
+pembungkusan keterangan dan pemenggalan halaman bisa diuji tanpa membuat satu
+PDF pun. `cetak.js` hanya menggambar.
+
+Dua hal yang mudah salah:
+
+- **Lebar kolom diukur, bukan dikira-kira.** Kolom yang lebih sempit dari
+  judulnya sendiri tidak membungkus melainkan terpotong diam-diam; REFERENSI
+  pernah hilang seluruhnya karena ini. Ukur dengan `widthOfString()` pada font
+  yang benar-benar dipakai bila lebarnya diubah.
+- **Rupiah diformat sendiri, tidak lewat `Intl`.** Node di server bisa berjalan
+  tanpa data locale `id-ID` dan diam-diam jatuh ke format Inggris, sehingga
+  laporan mencetak "Rp 2,500,000" yang salah baca di Indonesia.
+
 ## Audit pembayaran supplier
 
 Aturan pencocokan hanya ada di `src/rekonsiliasi/pencocokan.js` — murni, tanpa

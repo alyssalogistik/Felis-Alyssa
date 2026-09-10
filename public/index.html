@@ -298,6 +298,18 @@
 
     <div class="panel" id="ringkasan-bayaran" aria-live="polite"></div>
 
+    <div class="panel aksi-cetak">
+      <div class="sejajar rapat">
+        <button type="button" id="simpan-pdf" class="tombol-lembut">Simpan PDF</button>
+        <button type="button" id="cetak-bayaran" class="tombol-lembut">Cetak</button>
+      </div>
+      <p id="pesan-cetak" class="pesan" hidden></p>
+    </div>
+
+    <!-- Kop dokumen: tersembunyi di layar, muncul hanya saat halaman dicetak
+         langsung dari peramban. Tombol Cetak sendiri mencetak PDF resmi. -->
+    <div id="kop-cetak" class="kop-cetak" aria-hidden="true"></div>
+
     <div class="gulir-mendatar">
       <table class="tabel" id="tabel-bayaran">
         <thead>

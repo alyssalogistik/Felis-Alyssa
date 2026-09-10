@@ -18,6 +18,9 @@ const db = createAdminClient();
 /** Jumlah baris per sekali insert; batch raksasa ditolak PostgREST. */
 const UKURAN_BATCH = 500;
 
+/** Laporan cetak dibatasi supaya satu permintaan tidak menghasilkan PDF ribuan halaman. */
+const BATAS_CETAK = 5000;
+
 const KOLOM_TRANSAKSI =
   'id, unggahan_id, baris_sumber, berkas_sumber, tanggal, tanggal_ambigu, keterangan, ' +
   'debit, kredit, saldo, referensi, status_data, masalah, duplikat, status_rekon, ' +
@@ -295,6 +298,35 @@ api.get('/unggahan', jalur(async (_req, res) => {
     .limit(20);
   if (error) throw error;
   res.json({ data });
+}));
+
+// --- Cetak ------------------------------------------------------------------
+
+// Laporan dibuat di server, bukan dari tabel yang sedang tampil di layar.
+// Layar hanya memuat satu halaman hasil; laporan harus memuat seluruh transaksi
+// yang cocok dengan filter, dan itu hanya bisa dijamin dari sisi ini.
+api.get('/cetak', jalur(async (req, res) => {
+  const kriteria = kriteriaDari(req.query);
+
+  let query = db
+    .from('transaksi_bank')
+    .select(KOLOM_TRANSAKSI)
+    .order('tanggal', { ascending: true, nullsFirst: false })
+    .order('baris_sumber', { ascending: true })
+    .limit(BATAS_CETAK);
+
+  const { data, error } = await terapkanKriteria(query, kriteria);
+  if (error) throw error;
+
+  const { buatPdfLaporan } = await import('./cetak.js');
+  const { namaBerkas } = await import('./laporan.js');
+
+  const berkas = await buatPdfLaporan(data ?? [], kriteria);
+
+  res.setHeader('Content-Type', 'application/pdf');
+  res.setHeader('Content-Disposition', `attachment; filename="${namaBerkas(kriteria)}"`);
+  res.setHeader('Content-Length', String(berkas.length));
+  res.end(berkas);
 }));
 
 // --- Ekspor ----------------------------------------------------------------
