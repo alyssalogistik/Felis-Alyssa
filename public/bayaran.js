@@ -9,7 +9,7 @@
 // penyimpanan tersendiri: rekening koran yang sudah diunggah kapan pun, lewat
 // menu mana pun, langsung bisa dicari di sini.
 
-import { aman, ambil, el, kosong, formatTanggalPolos, formatNominal, rupiah } from './bantuan.js';
+import { aman, ambil, el, kosong, formatTanggalPolos, formatNominal, rupiah, tanggal } from './bantuan.js';
 
 const NAMA_BULAN = [
   'Januari', 'Februari', 'Maret', 'April', 'Mei', 'Juni',
@@ -102,6 +102,7 @@ export async function cariBayaran(lanjut = false) {
     else kotak.innerHTML = isi || `<tr><td colspan="6">${kosong('Tidak ada hasil.')}</td></tr>`;
 
     tampilRingkasan(total, hasil.ringkasan, adaKataKunci, hanyaDebit);
+    gambarKopCetak(total, hasil.ringkasan);
 
     mulai += hasil.data.length;
     el('muat-bayaran').hidden = mulai >= total;
@@ -109,6 +110,111 @@ export async function cariBayaran(lanjut = false) {
     kotak.innerHTML = `<tr><td colspan="6">${kosong(error.message)}</td></tr>`;
     el('ringkasan-bayaran').innerHTML = '';
     el('muat-bayaran').hidden = true;
+  }
+}
+
+/**
+ * Kop dokumen untuk pencetakan langsung dari peramban (Ctrl+P pada halaman).
+ *
+ * Tombol Cetak tidak memakai jalur ini — ia mencetak PDF resmi dari server yang
+ * memuat seluruh transaksi. Kop ini jaring pengaman: tanpa ia, seseorang yang
+ * menekan Ctrl+P akan mencetak tema gelap aplikasi beserta menunya.
+ */
+function gambarKopCetak(jumlah, ringkasan) {
+  const kotak = el('kop-cetak');
+  if (!kotak) return;
+
+  const formulir = el('cari-bayaran');
+  const nilai = (nama) => (formulir.elements[nama]?.value ?? '').trim();
+  const namaBulan = nilai('bulan') ? NAMA_BULAN[Number(nilai('bulan')) - 1] : 'Semua';
+
+  const pasangan = [
+    ['Kata Kunci', nilai('cari') || 'Semua transaksi'],
+    ['Bulan', namaBulan],
+    ['Tahun', nilai('tahun') || 'Semua'],
+    ['Dari Tanggal', nilai('dari') || '-'],
+    ['Sampai Tanggal', nilai('sampai') || '-'],
+    ['Tanggal Cetak', tanggal.format(new Date())],
+    ['Jumlah Transaksi', `${jumlah} transaksi`],
+    ['Total Uang Keluar', rupiah.format(Number(ringkasan?.debit ?? 0))],
+    ['Total Uang Masuk', rupiah.format(Number(ringkasan?.kredit ?? 0))],
+  ];
+
+  kotak.innerHTML = `
+    <h1>PT ALYSSA AUTO LOGISTIK</h1>
+    <h2>AUDIT PEMBAYARAN SUPPLIER / MUTASI REKENING</h2>
+    <dl>${pasangan.map(([k, v]) => `<div><dt>${aman(k)}</dt><dd>${aman(v)}</dd></div>`).join('')}</dl>`;
+}
+
+/** Alamat laporan PDF di server, mengikuti filter yang sedang aktif. */
+function alamatLaporan() {
+  return `/api/rekonsiliasi/cetak?${kriteria()}`;
+}
+
+function pesanCetak(kelas, teks) {
+  const kotak = el('pesan-cetak');
+  if (!kotak) return;
+  kotak.className = `pesan ${kelas}`;
+  kotak.textContent = teks;
+  kotak.hidden = teks === '';
+}
+
+/**
+ * Membuka dialog cetak untuk laporan PDF.
+ *
+ * Yang dicetak adalah PDF dari server, bukan tabel di layar. Layar hanya memuat
+ * satu halaman hasil, sedangkan laporan harus memuat seluruh transaksi yang
+ * cocok — dan hanya PDF itu yang bisa memastikan kepala tabel terulang di tiap
+ * halaman, baris tidak terbelah, serta nomor "Halaman X / Y" benar. Peramban
+ * tidak bisa menghitung nomor halaman lewat CSS.
+ */
+async function cetakLaporan() {
+  const tombol = el('cetak-bayaran');
+  tombol.disabled = true;
+  pesanCetak('', 'Menyiapkan laporan…');
+
+  let alamatObjek = null;
+  try {
+    const respons = await fetch(alamatLaporan());
+    if (!respons.ok) throw new Error(`Gagal menyiapkan laporan (HTTP ${respons.status}).`);
+
+    alamatObjek = URL.createObjectURL(await respons.blob());
+
+    const bingkai = document.createElement('iframe');
+    bingkai.style.cssText = 'position:fixed;right:0;bottom:0;width:0;height:0;border:0';
+    bingkai.src = alamatObjek;
+
+    const siap = new Promise((tuntas, tolak) => {
+      bingkai.onload = tuntas;
+      bingkai.onerror = () => tolak(new Error('Laporan tidak bisa dibuka di peramban ini.'));
+    });
+
+    document.body.append(bingkai);
+    await siap;
+
+    // Sebagian peramban seluler menolak mencetak dari bingkai tersembunyi;
+    // kalau itu terjadi, laporannya dibuka di tab baru supaya tetap bisa
+    // dicetak dari penampil PDF bawaan.
+    try {
+      bingkai.contentWindow.focus();
+      bingkai.contentWindow.print();
+      pesanCetak('', '');
+    } catch {
+      window.open(alamatObjek, '_blank');
+      pesanCetak('', 'Laporan dibuka di tab baru — cetak dari sana.');
+      alamatObjek = null;
+    }
+
+    // Bingkai dan alamat sementara dilepas setelah dialog cetak sempat terbuka.
+    setTimeout(() => {
+      bingkai.remove();
+      if (alamatObjek) URL.revokeObjectURL(alamatObjek);
+    }, 60000);
+  } catch (error) {
+    if (alamatObjek) URL.revokeObjectURL(alamatObjek);
+    pesanCetak('gagal', error.message);
+  } finally {
+    tombol.disabled = false;
   }
 }
 
@@ -140,4 +246,8 @@ export function pasangKendaliBayaran() {
   });
 
   el('muat-bayaran').addEventListener('click', () => cariBayaran(true));
+
+  // Unduhan langsung: nama berkasnya ditentukan server lewat Content-Disposition.
+  el('simpan-pdf').addEventListener('click', () => window.location.assign(alamatLaporan()));
+  el('cetak-bayaran').addEventListener('click', cetakLaporan);
 }
