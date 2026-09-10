@@ -21,6 +21,7 @@ const urutan = [
   '0002_otomatis_dan_keamanan.sql',
   '0003_rekonsiliasi_bank.sql',
   '0004_audit_pemasok.sql',
+  '0005_filter_tanggal_audit.sql',
 ];
 
 // Komentar dibuang supaya yang harus disalin lewat layar sentuh sependek

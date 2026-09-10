@@ -210,10 +210,17 @@ function kriteriaAudit(query) {
     const v = Number(n);
     return n === undefined || n === '' || !Number.isInteger(v) || v < min || v > maks ? null : v;
   };
+  // Tanggal diterima hanya dalam bentuk ISO. Bentuk lain ditolak diam-diam
+  // menjadi "tanpa filter" alih-alih diteruskan ke database, karena tanggal
+  // cacat yang lolos akan menyaring habis hasilnya tanpa alasan yang terlihat.
+  const tanggal = (t) => (typeof t === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(t) ? t : '');
+
   return {
     pemasok: typeof query.pemasok === 'string' ? query.pemasok.trim() : '',
     bulan: angka(query.bulan, 1, 12),
     tahun: angka(query.tahun, 1900, 2200),
+    dari: tanggal(query.dari),
+    sampai: tanggal(query.sampai),
     status: Object.values(STATUS).includes(query.status) ? query.status : '',
     // "hanya yang bermasalah" adalah tampilan bawaan audit: yang sudah cocok
     // tidak perlu dilihat satu per satu.
@@ -225,6 +232,10 @@ function terapkanAudit(query, k) {
   if (k.pemasok) query = query.ilike('pemasok', kutip(`%${k.pemasok}%`).slice(1, -1));
   if (k.bulan !== null) query = query.eq('bulan', k.bulan);
   if (k.tahun !== null) query = query.eq('tahun', k.tahun);
+  // Rentang tanggal mengacu ke tanggal invoice, sama dengan kolom yang
+  // diurutkan dan ditampilkan, supaya yang tersaring sama dengan yang terlihat.
+  if (k.dari) query = query.gte('tanggal_invoice', k.dari);
+  if (k.sampai) query = query.lte('tanggal_invoice', k.sampai);
   if (k.status) query = query.eq('status', k.status);
   if (k.hanya_selisih) query = query.neq('status', STATUS.MATCH);
   return query;
@@ -248,6 +259,8 @@ api.get('/hasil', jalur(async (req, res) => {
     p_pemasok: k.pemasok || null,
     p_bulan: k.bulan,
     p_tahun: k.tahun,
+    p_dari: k.dari || null,
+    p_sampai: k.sampai || null,
     p_status: k.status || null,
   });
   if (galatRingkasan) throw galatRingkasan;

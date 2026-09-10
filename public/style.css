@@ -283,6 +283,14 @@ textarea { resize: vertical; }
 }
 .status-unggah.terisi { color: var(--teks); }
 
+/* Penjelasan singkat di dalam panel, sebelum tombolnya ditekan. */
+.keterangan-panel {
+  margin: 0 0 12px;
+  color: var(--teks-redup);
+  font-size: 13px;
+  line-height: 1.5;
+}
+
 .sejajar { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
 .sejajar.rapat { margin-top: 14px; }
 .sejajar .tombol-lembut, .sejajar .tombol { margin-top: 0; }

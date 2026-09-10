@@ -46,6 +46,14 @@ Baris terakhirnya memanggil `pg_notify('pgrst', 'reload schema')`. Tanpa itu
 PostgREST masih memakai peta skema lama dan tetap melaporkan tabel baru sebagai
 `Could not find the table ... in the schema cache` walaupun tabelnya sudah ada.
 
+Menambah parameter ke fungsi yang sudah ada **tidak bisa** dengan
+`create or replace function` saja. PostgreSQL membedakan fungsi berdasarkan
+daftar argumennya, jadi versi baru akan berdampingan dengan versi lama alih-alih
+menggantikannya, dan pemanggilan lama menjadi ambigu — gagal dengan "Could not
+choose a best candidate function" justru setelah pemutakhiran yang tampak
+berhasil. Tanda tangan lama harus dilepas eksplisit lebih dulu; lihat
+`0005_filter_tanggal_audit.sql`.
+
 ## Arsitektur
 
 Tanpa framework dan tanpa build step — disengaja, jangan ditambahkan tanpa alasan.
@@ -103,6 +111,48 @@ Sisa peringatan `npm audit` yang diketahui: **uuid** melalui exceljs
 `uuidv4()`. Perbaikannya menurunkan exceljs ke 3.4.0 yang jauh lebih tua, jadi
 peringatan ini dibiarkan secara sadar. Tinjau ulang saat exceljs memperbarui
 dependensinya.
+
+## Rekening koran PDF (BCA)
+
+Satu uploader, satu penyimpanan. Halaman Audit dan halaman Rekonsiliasi Bank
+sama-sama menembak `POST /api/rekonsiliasi/unggah` dan menyimpan ke
+`unggahan_rekening_koran` + `transaksi_bank`. Jangan pernah menambahkan jalur
+unggah kedua: audit mencocokkan tagihan terhadap tabel itu, jadi rekening koran
+yang masuk lewat dua pintu akan tercatat dua kali dan membuat satu transfer
+tampak membayar dua tagihan.
+
+Alurnya bercabang hanya di pembacaan berkas, lalu menyatu lagi:
+
+| Lapisan | Tugas |
+|---|---|
+| `baca.js` | Mengenali format dari isi berkas (`%PDF-`, ZIP, OLE2), bukan dari namanya |
+| `pdf.js` | PDF menjadi baris berkoordinat. Tidak tahu apa pun soal bank |
+| `bca.js` | Baris berkoordinat menjadi tabel BCA, lengkap dengan baris header |
+| `parser.js` | `uraiTabel()` yang sama dengan jalur xlsx/csv |
+
+Karena keluaran `bca.js` berupa tabel bersama header, validasi, penandaan
+duplikat, dan penanganan penanda DB/CR tetap hanya ada satu tempat. Dukungan
+bank lain nanti cukup menambah satu berkas setara `bca.js`.
+
+Tiga hal yang mudah rusak kalau modul ini disunting:
+
+- **Kolom ditentukan dari tepi, bukan titik tengah.** Teks dinilai dari tepi
+  kirinya, angka dari tepi kanannya. KETERANGAN memanjang jauh melewati lebar
+  judulnya, sedangkan MUTASI dan SALDO dicetak rata kanan. Salah satu aturan
+  saja yang dipakai untuk keduanya akan memenggal nama supplier atau melempar
+  nominal ke kolom cabang.
+- **Diproses per halaman.** BCA mencetak ulang kop di setiap halaman. Kalau
+  halaman digabung jadi satu aliran, "NO. REKENING" halaman berikutnya akan
+  tergabung sebagai sambungan keterangan transaksi terakhir halaman sebelumnya.
+- **Tahun berasal dari baris PERIODE, tidak pernah ditebak.** Baris transaksi
+  BCA hanya memuat DD/MM. Tanpa PERIODE, penguraian ditolak — tahun yang salah
+  tidak menimbulkan galat apa pun dan baru ketahuan saat angka auditnya dipakai.
+
+Memakai **pdfjs-dist**, bukan `pdf-parse`. `pdf-parse` membungkus salinan lama
+pdfjs di dalamnya, sehingga perbaikan keamanan hulu tidak sampai. pdfjs-dist
+adalah pustaka hulunya sendiri dan tidak menambah satu pun peringatan baru pada
+`npm audit`. Impornya ditunda sampai benar-benar ada PDF yang dibaca, supaya
+unggahan xlsx tidak menanggung biayanya.
 
 ## Audit pembayaran supplier
 

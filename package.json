@@ -17,7 +17,8 @@
     "@supabase/supabase-js": "^2.45.0",
     "dotenv": "^16.4.5",
     "exceljs": "^4.4.0",
-    "express": "^4.19.2"
+    "express": "^4.19.2",
+    "pdfjs-dist": "^6.3.289"
   },
   "overrides": {
     "qs": "^6.16.0"

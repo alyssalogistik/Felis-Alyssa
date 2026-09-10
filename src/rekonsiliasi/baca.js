@@ -15,7 +15,10 @@ const BATAS_BARIS = 50000;
  * Kenali format dari isi berkas, bukan dari namanya, karena ekstensi bisa keliru.
  * xlsx adalah arsip ZIP; xls lama adalah wadah OLE2.
  */
-function kenaliFormat(buffer, namaBerkas = '') {
+export function kenaliFormat(buffer, namaBerkas = '') {
+  if (buffer.length >= 5) {
+    if (buffer.subarray(0, 5).toString('latin1') === '%PDF-') return 'pdf';
+  }
   if (buffer.length >= 4) {
     if (buffer[0] === 0x50 && buffer[1] === 0x4b) return 'xlsx';
     if (buffer[0] === 0xd0 && buffer[1] === 0xcf && buffer[2] === 0x11 && buffer[3] === 0xe0) return 'xls';
@@ -94,6 +97,23 @@ export async function bukaBerkas(buffer, namaBerkas = '') {
  * menyertakan sheet ringkasan atau catatan di depan.
  */
 export async function bacaRekeningKoran(buffer, namaBerkas = '') {
+  // PDF tidak punya sheet dan tabelnya harus disusun ulang dari koordinat teks,
+  // jadi ditangani lebih dulu. Setelah menjadi tabel, jalurnya kembali menyatu:
+  // uraiTabel() yang sama yang memvalidasi dan menandai duplikatnya.
+  if (kenaliFormat(buffer, namaBerkas) === 'pdf') {
+    if (!buffer || buffer.length === 0) throw new GalatFormat('Berkas kosong.');
+    if (buffer.length > BATAS_UKURAN) {
+      throw new GalatFormat(`Berkas melebihi ${BATAS_UKURAN / 1024 / 1024} MB.`);
+    }
+
+    const { bacaBarisPdf } = await import('./pdf.js');
+    const { tabelDariBaris } = await import('./bca.js');
+
+    const { tabel, periode } = tabelDariBaris(await bacaBarisPdf(buffer));
+    const hasil = uraiTabel(tabel, { berkasSumber: namaBerkas });
+    return { ...hasil, sheet: `BCA ${String(periode.bulan).padStart(2, '0')}/${periode.tahun}` };
+  }
+
   const sheets = await bukaBerkas(buffer, namaBerkas);
 
   const galat = [];
