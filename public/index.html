@@ -256,6 +256,72 @@
       <p id="pesan-koran-audit" class="pesan" hidden></p>
     </div>
 
+    <form class="panel" id="cari-bayaran">
+      <h3>Cari Pembayaran Supplier</h3>
+      <p class="keterangan-panel">
+        Mencari langsung di keterangan transaksi rekening koran. Tidak perlu
+        mengunggah daftar tagihan.
+      </p>
+
+      <label>Cari Supplier / Nama / Kata Kunci
+        <input name="cari" type="search" placeholder="&#128269; Contoh: TRIO PUTRA" autocomplete="off">
+      </label>
+
+      <div class="sejajar">
+        <label>Bulan
+          <select name="bulan"><option value="">Semua</option></select>
+        </label>
+        <label>Tahun
+          <select name="tahun"><option value="">Semua</option></select>
+        </label>
+      </div>
+
+      <div class="sejajar">
+        <label>Dari Tanggal
+          <input name="dari" type="date">
+        </label>
+        <label>Sampai Tanggal
+          <input name="sampai" type="date">
+        </label>
+      </div>
+
+      <label class="sebaris">
+        <input type="checkbox" name="hanya_debit" value="1" checked>
+        Hanya uang keluar (debit)
+      </label>
+
+      <div class="sejajar rapat">
+        <button type="button" id="reset-bayaran" class="tombol-lembut">Reset Filter</button>
+        <button type="button" id="ekspor-bayaran" class="tombol-lembut">Export Hasil</button>
+      </div>
+    </form>
+
+    <div class="panel" id="ringkasan-bayaran" aria-live="polite"></div>
+
+    <div class="gulir-mendatar">
+      <table class="tabel" id="tabel-bayaran">
+        <thead>
+          <tr>
+            <th>Tanggal</th>
+            <th>Keterangan Transaksi</th>
+            <th class="angka-kolom">Debit / Keluar</th>
+            <th class="angka-kolom">Kredit / Masuk</th>
+            <th class="angka-kolom">Nominal</th>
+            <th>Referensi</th>
+          </tr>
+        </thead>
+        <tbody id="isi-tabel-bayaran"></tbody>
+      </table>
+    </div>
+    <button id="muat-bayaran" class="tombol-lembut" hidden>Muat lebih banyak</button>
+
+    <details class="panel lipat" id="lipat-otomatis">
+      <summary>Pencocokan otomatis dengan daftar tagihan (opsional)</summary>
+      <p class="keterangan-panel">
+        Hanya diperlukan bila ingin mencocokkan nominal transfer dengan tagihan
+        supplier beserta PPh-nya. Pencarian di atas tidak membutuhkan ini.
+      </p>
+
     <div class="panel">
       <h3>Daftar Tagihan Supplier</h3>
       <label class="unggah">
@@ -329,6 +395,7 @@
       </table>
     </div>
     <button id="muat-audit" class="tombol-lembut" hidden>Muat lebih banyak</button>
+    </details>
   </section>
 
   <!-- Modal detail audit -->

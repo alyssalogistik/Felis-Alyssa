@@ -6,7 +6,7 @@
 
 /** Semua kriteria yang terisi harus terpenuhi sekaligus, bukan salah satu. */
 export function saring(transaksi, kriteria = {}) {
-  const { cari, bulan, tahun, dari, sampai } = kriteria;
+  const { cari, bulan, tahun, dari, sampai, hanya_debit: hanyaDebit } = kriteria;
 
   const kata = typeof cari === 'string' ? cari.trim().toLowerCase() : '';
   const bulanAngka = bulan === '' || bulan === null || bulan === undefined ? null : Number(bulan);
@@ -28,6 +28,10 @@ export function saring(transaksi, kriteria = {}) {
     if (bulanAngka !== null && Number(t.tanggal.slice(5, 7)) !== bulanAngka) return false;
     if (dari && t.tanggal < dari) return false;
     if (sampai && t.tanggal > sampai) return false;
+
+    // Uang keluar saja, untuk menjawab "supplier ini sudah dibayar belum".
+    // Disaring terakhir supaya kriteria lain tetap berlaku apa adanya.
+    if (hanyaDebit && !(Number(t.debit ?? 0) > 0)) return false;
 
     return true;
   });

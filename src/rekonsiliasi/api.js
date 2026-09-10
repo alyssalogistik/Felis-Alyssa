@@ -55,6 +55,10 @@ function kriteriaDari(query) {
     tahun: angka(query.tahun, 1900, 2200),
     dari: tanggal(query.dari),
     sampai: tanggal(query.sampai),
+    // Pertanyaan yang dijawab halaman audit adalah "supplier ini sudah saya
+    // bayar belum", dan jawabannya hanya ada di uang keluar. Uang masuk yang
+    // kebetulan menyebut nama yang sama justru menyesatkan.
+    hanya_debit: query.hanya_debit === '1' || query.hanya_debit === 'true',
   };
 }
 
@@ -67,7 +71,7 @@ function kriteriaDari(query) {
  * ringkasan_transaksi_bank() supaya daftar dan ringkasan tidak pernah
  * menghitung himpunan yang berbeda.
  */
-function terapkanKriteria(query, { cari, bulan, tahun, dari, sampai }) {
+function terapkanKriteria(query, { cari, bulan, tahun, dari, sampai, hanya_debit }) {
   if (cari) {
     const pola = kutip(`%${cari}%`);
     query = query.or(`keterangan.ilike.${pola},referensi.ilike.${pola}`);
@@ -76,6 +80,7 @@ function terapkanKriteria(query, { cari, bulan, tahun, dari, sampai }) {
   if (tahun !== null) query = query.eq('tahun', tahun);
   if (dari) query = query.gte('tanggal', dari);
   if (sampai) query = query.lte('tanggal', sampai);
+  if (hanya_debit) query = query.gt('debit', 0);
   return query;
 }
 
@@ -188,6 +193,13 @@ api.get('/transaksi', jalur(async (req, res) => {
 
   // Ringkasan dihitung di database atas seluruh hasil filter, bukan atas satu
   // halaman yang sedang tampil.
+  //
+  // hanya_debit sengaja TIDAK diteruskan ke fungsi ringkasan, dan itu bukan
+  // kelalaian: baris kredit menyumbang debit nol, sehingga total debitnya sama
+  // persis dengan atau tanpa penyaringan itu. Jumlah barisnya berbeda, dan
+  // untuk itu dipakai `total` dari hitungan kueri di atas yang memang sudah
+  // tersaring. Menambah parameter ke fungsinya hanya akan menuntut migration
+  // tanpa mengubah satu angka pun.
   const { data: ringkasan, error: galatRingkasan } = await db.rpc('ringkasan_transaksi_bank', {
     p_cari: kriteria.cari || null,
     p_bulan: kriteria.bulan,

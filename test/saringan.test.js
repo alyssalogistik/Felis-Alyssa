@@ -108,3 +108,68 @@ test('transaksi tanpa tanggal valid tidak lolos filter waktu', () => {
 test('tahun yang tersedia diambil dari data, terbaru dulu', () => {
   assert.deepEqual(tahunTersedia(CONTOH), [2026]);
 });
+
+// --- Pencarian pembayaran supplier ------------------------------------------
+//
+// Halaman audit menjawab satu pertanyaan: "supplier ini sudah saya bayar
+// belum?" Uang masuk yang kebetulan menyebut nama yang sama bukan jawabannya.
+
+test('hanya uang keluar: kredit dengan nama yang sama tidak ikut', () => {
+  const hasil = saring(CONTOH, { cari: 'TRIO PUTRA', hanya_debit: true });
+  assert.equal(hasil.length, 1);
+  assert.equal(hasil[0].keterangan, 'TRANSFER KE TRIO PUTRA');
+  assert.equal(hasil[0].debit, 3000000);
+});
+
+test('tanpa penyaring uang keluar, kredit tetap tampil', () => {
+  assert.equal(saring(CONTOH, { cari: 'TRIO PUTRA' }).length, 4);
+});
+
+test('pencarian sebagian nama menemukan nama yang lebih panjang', () => {
+  const hasil = saring(CONTOH, { cari: 'trio' });
+  assert.equal(hasil.length, 4);
+  assert.ok(hasil.some((t) => t.keterangan === 'PT TRIO PUTRA TRANS'));
+});
+
+test('pencarian mengabaikan besar-kecil huruf', () => {
+  assert.equal(
+    saring(CONTOH, { cari: 'pt trio putra' }).length,
+    saring(CONTOH, { cari: 'PT TRIO PUTRA' }).length
+  );
+});
+
+test('kombinasi lengkap: nama + rentang tanggal + uang keluar', () => {
+  const hasil = saring(CONTOH, {
+    cari: 'TRIO', dari: '2026-08-16', sampai: '2026-08-31', hanya_debit: true,
+  });
+  assert.equal(hasil.length, 1);
+  assert.equal(hasil[0].tanggal, '2026-08-20');
+});
+
+test('rentang tanggal inklusif di kedua ujungnya', () => {
+  const hasil = saring(CONTOH, { dari: '2026-08-01', sampai: '2026-08-01' });
+  assert.equal(hasil.length, 1);
+  assert.equal(hasil[0].tanggal, '2026-08-01');
+});
+
+test('kombinasi yang tidak menghasilkan apa-apa mengembalikan kosong, bukan galat', () => {
+  assert.deepEqual(saring(CONTOH, { cari: 'SUPPLIER YANG TIDAK ADA' }), []);
+  assert.deepEqual(saring(CONTOH, { cari: 'TRIO PUTRA', bulan: 12, tahun: 2026 }), []);
+  // Ada namanya, ada bulannya, tetapi tidak ada uang keluarnya pada bulan itu.
+  assert.deepEqual(saring(CONTOH, { cari: 'SUMBER REJEKI', hanya_debit: true }), []);
+});
+
+test('total uang keluar dihitung dari hasil saring, bukan seluruh rekening', () => {
+  const hasil = saring(CONTOH, { cari: 'TRIO', hanya_debit: true });
+  assert.equal(ringkas(hasil).debit, 3000000);
+  assert.equal(ringkas(hasil).kredit, 0);
+});
+
+test('menyaring uang keluar tidak mengubah total debit', () => {
+  // Baris kredit menyumbang debit nol, jadi totalnya sama dengan atau tanpa
+  // penyaringan itu. Inilah alasan fungsi ringkasan di database tidak perlu
+  // menerima parameter tambahan.
+  const semua = saring(CONTOH, { cari: 'TRIO' });
+  const keluarSaja = saring(CONTOH, { cari: 'TRIO', hanya_debit: true });
+  assert.equal(ringkas(semua).debit, ringkas(keluarSaja).debit);
+});

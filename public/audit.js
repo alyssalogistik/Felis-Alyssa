@@ -342,6 +342,17 @@ export function pasangKendaliAudit() {
 
   el('muat-audit').addEventListener('click', () => muatHasil(true));
 
+  // Bagian pencocokan otomatis dimuat saat pertama kali dibuka, lalu tidak
+  // diambil ulang setiap kali dilipat dan dibuka lagi.
+  const lipat = el('lipat-otomatis');
+  let sudahDimuat = false;
+  lipat.addEventListener('toggle', async () => {
+    if (!lipat.open || sudahDimuat) return;
+    sudahDimuat = true;
+    await muatStatusTagihan();
+    await muatHasil();
+  });
+
   el('isi-tabel-audit').addEventListener('click', (peristiwa) => {
     const baris = peristiwa.target.closest('tr[data-tagihan]');
     if (baris) bukaDetail(baris.dataset.tagihan);
@@ -351,6 +362,9 @@ export function pasangKendaliAudit() {
 }
 
 export async function muatAudit() {
-  await Promise.all([muatStatusKoran(), muatStatusTagihan()]);
-  await muatHasil();
+  // Hanya status rekening koran yang dimuat saat halaman dibuka. Hasil
+  // pencocokan otomatis menunggu sampai bagiannya benar-benar dibuka: alur
+  // utama halaman ini adalah pencarian, dan menariknya lebih dulu berarti dua
+  // permintaan yang tidak dilihat siapa pun.
+  await muatStatusKoran();
 }

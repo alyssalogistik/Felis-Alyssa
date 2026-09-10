@@ -324,6 +324,34 @@ textarea { resize: vertical; }
 .tabel .angka-kolom { text-align: right; font-variant-numeric: tabular-nums; }
 .tabel .nol { color: var(--teks-redup); }
 
+/* Uang keluar adalah jawaban yang dicari di halaman audit, jadi dibedakan. */
+.tabel .angka-kolom.keluar { color: var(--merah); }
+
+/* Keterangan BCA panjang dan justru kolom yang paling perlu dibaca; ia boleh
+   membungkus supaya tidak mendorong kolom lain keluar layar. */
+.tabel .keterangan-sel { white-space: normal; min-width: 220px; max-width: 380px; }
+
+/* Penanda kecil pada tanggal yang bisa dibaca dua arah. */
+.tanda {
+  display: inline-block;
+  padding: 0 5px;
+  border-radius: 6px;
+  background: var(--latar);
+  color: var(--teks-redup);
+  font-size: 11px;
+}
+
+/* Bagian opsional yang dilipat: ada bila dibutuhkan, tidak menghalangi bila tidak. */
+.lipat > summary {
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: .5px;
+  text-transform: uppercase;
+  color: var(--teks-redup);
+}
+.lipat[open] > summary { margin-bottom: 12px; }
+
 /* Keterangan panjang dipotong di tampilan; teks utuhnya ada di detail. */
 .tabel .keterangan {
   max-width: 240px;
