@@ -3,7 +3,13 @@
 ## Batasan wajib
 
 **Project ini terisolasi.** Satu-satunya database yang boleh disentuh adalah
-Supabase project `alyssa-logistik` milik Alyssa Logistics.
+project Supabase milik Alyssa Logistics: akun `alyssalogistik@gmail.com`,
+organisasi `organisasi-alyssa`, region `ap-southeast-1`.
+
+Yang menentukan sasaran adalah **project ref**, bukan nama tampilannya. Nama
+tampilan di dashboard saat ini masih bawaan (`alyssalogistik's Project`) dan
+boleh berubah sewaktu-waktu; ref tidak. Ref yang berlaku dicatat di
+`SUPABASE_PROJECT_REF` pada environment, dan itulah yang diperiksa mesin.
 
 Isolasi ini berlaku untuk **semua** milik Sean/Seanniel, bukan database saja:
 akun, repository, environment, environment variable, dan deployment. Termasuk
