@@ -154,6 +154,40 @@ adalah pustaka hulunya sendiri dan tidak menambah satu pun peringatan baru pada
 `npm audit`. Impornya ditunda sampai benar-benar ada PDF yang dibaca, supaya
 unggahan xlsx tidak menanggung biayanya.
 
+## Halaman audit: pencarian dulu, pencocokan belakangan
+
+Pertanyaan yang benar-benar dijawab halaman ini adalah "supplier ini sudah saya
+transfer belum". Jawabannya ada di mutasi bank dan tidak menuntut daftar tagihan
+lebih dulu, jadi **pencarian adalah alur utamanya** dan pencocokan otomatis
+dengan tagihan adalah pelengkap yang dilipat di bawah.
+
+Urutan itu bukan selera tata letak. Menaruh unggah tagihan sebagai langkah
+pertama membuat orang menyangka fitur ini tidak bisa dipakai tanpa menyiapkan
+data tagihan dulu — padahal seluruh jawabannya sudah ada di rekening koran yang
+sudah diunggah.
+
+`public/bayaran.js` membaca `GET /api/rekonsiliasi/transaksi`, endpoint yang
+sama dengan halaman Rekonsiliasi Bank. Tidak ada endpoint, tabel, maupun
+penyimpanan tersendiri: rekening koran yang diunggah kapan pun dan lewat menu
+mana pun langsung bisa dicari, tanpa unggah ulang.
+
+Dua hal yang harus dipertahankan:
+
+- **Nihil hasil tidak pernah dinyatakan sebagai "belum dibayar".** Nama di
+  keterangan bank sering berbeda dari nama resmi supplier; menyimpulkan belum
+  dibayar di layar ini akan membuat orang membayar dua kali. Yang ditampilkan
+  adalah bahwa tidak ada yang cocok pada kata kunci dan periode itu, beserta
+  saran mempersempit atau melonggarkan pencarian.
+- **`hanya_debit` tidak diteruskan ke `ringkasan_transaksi_bank()`.** Baris
+  kredit menyumbang debit nol, sehingga total debitnya sama persis dengan atau
+  tanpa penyaringan itu; jumlah barisnya diambil dari hitungan kueri yang memang
+  sudah tersaring. Menambah parameter ke fungsinya hanya menuntut migration
+  tanpa mengubah satu angka pun.
+
+Aturan penyaringan hidup di dua tempat yang sengaja dijaga cermin: `saring()` di
+`saringan.js` (murni, teruji) dan `terapkanKriteria()` di `api.js` (dijalankan
+database). Kalau salah satu diubah, ubah keduanya.
+
 ## Audit pembayaran supplier
 
 Aturan pencocokan hanya ada di `src/rekonsiliasi/pencocokan.js` — murni, tanpa
