@@ -16,17 +16,74 @@ const NAMA_BULAN = [
   'Juli', 'Agustus', 'September', 'Oktober', 'November', 'Desember',
 ];
 
-const BATAS = 50;
+/** Baris per permintaan. 200 adalah batas atas yang diterima endpoint. */
+const BATAS = 200;
+
+/**
+ * Pagar jumlah baris yang ditarik dalam satu pencarian.
+ *
+ * Hasil pencarian supplier harus tampil seluruhnya, bukan sepotong: auditor
+ * yang melihat sebagian daftar akan menyimpulkan supplier kurang dibayar
+ * padahal sisanya hanya belum dimuat. Karena itu halaman berikutnya diambil
+ * otomatis sampai habis. Pagarnya tetap ada supaya pencarian tanpa kata kunci
+ * di atas rekening koran bertahun-tahun tidak menarik puluhan ribu baris
+ * sekaligus; sisanya diambil lewat tombol.
+ */
+const BATAS_MUATAN = 2000;
+
 let mulai = 0;
 let total = 0;
 
-/** Filter yang sedang aktif, apa adanya dari formulir. */
-function kriteria() {
+/** Isian formulir apa adanya — belum tentu sudah diterapkan. */
+function kriteriaFormulir() {
   const parameter = new URLSearchParams();
   for (const [nama, nilai] of new FormData(el('cari-bayaran'))) {
-    if (String(nilai).trim() !== '') parameter.set(nama, String(nilai).trim());
+    // Spasi dirapikan di sini sekali, sehingga seluruh jalur di bawahnya
+    // menerima kata kunci yang sudah bersih.
+    //
+    // Bukan hanya ujungnya: spasi ganda di tengah pun dirapatkan. Pencarian
+    // di database memakai pola harfiah, jadi "SUGENG  RIYANTO" berspasi dua
+    // tidak akan pernah cocok dengan "SUGENG RIYANTO" di rekening koran —
+    // dan hasil nihil di halaman ini terbaca sebagai "belum dibayar".
+    const bersih = String(nilai).trim().replace(/\s+/g, ' ');
+    if (bersih !== '') parameter.set(nama, bersih);
   }
   return parameter;
+}
+
+/**
+ * Filter yang benar-benar sedang tampil di layar.
+ *
+ * Sejak pencarian hanya berjalan saat tombol ditekan, isian formulir bisa
+ * berbeda dari hasil yang sedang tampak. Laporan PDF, cetak, dan ekspor
+ * mengacu ke potret ini, bukan ke isian — kalau tidak, berkas yang diunduh
+ * akan memuat filter yang belum pernah dijalankan dan berbeda dari tabel yang
+ * dilihat pemakainya.
+ */
+let kriteriaBerlaku = new URLSearchParams();
+
+function kriteria() {
+  return kriteriaBerlaku;
+}
+
+/**
+ * Rentang tanggal terbalik tidak akan menghasilkan galat dari database, hanya
+ * hasil kosong — dan kosong di halaman ini terbaca sebagai "belum dibayar".
+ * Karena itu diperiksa sebelum permintaan dikirim.
+ */
+export function periksaRentang(dari, sampai) {
+  if (dari && sampai && dari > sampai) {
+    return 'Dari Tanggal lebih besar dari Sampai Tanggal. Tukar keduanya lalu cari lagi.';
+  }
+  return null;
+}
+
+function pesanCari(kelas, teks) {
+  const kotak = el('pesan-cari');
+  if (!kotak) return;
+  kotak.className = `pesan ${kelas}`;
+  kotak.textContent = teks;
+  kotak.hidden = teks === '';
 }
 
 function baris(t) {
@@ -82,34 +139,56 @@ export async function cariBayaran(lanjut = false) {
   const kotak = el('isi-tabel-bayaran');
   if (!kotak) return;
 
-  if (!lanjut) mulai = 0;
-
-  const parameter = kriteria();
-  const adaKataKunci = (parameter.get('cari') ?? '') !== '';
-  const hanyaDebit = parameter.get('hanya_debit') === '1';
-
-  parameter.set('batas', String(BATAS));
-  parameter.set('mulai', String(mulai));
-
-  // Pesan "hasil dikosongkan" milik pencarian sebelumnya tidak boleh menempel
-  // di atas hasil yang baru.
   if (!lanjut) {
+    mulai = 0;
+    // Potret diambil sekali di sini. Halaman berikutnya memakai potret yang
+    // sama, sehingga sambungan hasil tidak pernah bercampur dua filter.
+    kriteriaBerlaku = kriteriaFormulir();
+
+    // Pesan "hasil dikosongkan" milik pencarian sebelumnya tidak boleh
+    // menempel di atas hasil yang baru.
     kotak.innerHTML = `<tr><td colspan="6">${kosong('Mencari…')}</td></tr>`;
     pesanCetak('', '');
   }
 
+  const adaKataKunci = (kriteriaBerlaku.get('cari') ?? '') !== '';
+  const hanyaDebit = kriteriaBerlaku.get('hanya_debit') === '1';
+
+  const berhenti = mulai + BATAS_MUATAN;
+  let pertama = !lanjut;
+  let ringkasan = null;
+
   try {
-    const hasil = await ambil(`/rekonsiliasi/transaksi?${parameter}`);
-    total = hasil.total ?? 0;
+    // Ditarik berulang sampai seluruh hasil yang cocok masuk ke tabel. Jumlah
+    // dan totalnya sendiri datang dari database sejak permintaan pertama, jadi
+    // angkanya sudah benar bahkan sebelum baris terakhir selesai dimuat.
+    for (;;) {
+      const parameter = new URLSearchParams(kriteriaBerlaku);
+      parameter.set('batas', String(BATAS));
+      parameter.set('mulai', String(mulai));
 
-    const isi = hasil.data.map(baris).join('');
-    if (lanjut) kotak.insertAdjacentHTML('beforeend', isi);
-    else kotak.innerHTML = isi || `<tr><td colspan="6">${kosong('Tidak ada hasil.')}</td></tr>`;
+      const hasil = await ambil(`/rekonsiliasi/transaksi?${parameter}`);
+      total = hasil.total ?? 0;
+      ringkasan = hasil.ringkasan;
 
-    tampilRingkasan(total, hasil.ringkasan, adaKataKunci, hanyaDebit);
-    gambarKopCetak(total, hasil.ringkasan);
+      const isi = hasil.data.map(baris).join('');
+      if (pertama) {
+        kotak.innerHTML = isi || `<tr><td colspan="6">${kosong('Tidak ada hasil.')}</td></tr>`;
+        pertama = false;
+      } else if (isi !== '') {
+        kotak.insertAdjacentHTML('beforeend', isi);
+      }
 
-    mulai += hasil.data.length;
+      mulai += hasil.data.length;
+
+      // Halaman kosong menghentikan pengulangan walau hitungan mengatakan masih
+      // ada sisa; tanpa penjaga ini satu hitungan yang meleset akan berputar
+      // selamanya.
+      if (hasil.data.length === 0 || mulai >= total || mulai >= berhenti) break;
+    }
+
+    tampilRingkasan(total, ringkasan, adaKataKunci, hanyaDebit);
+    gambarKopCetak(total, ringkasan);
     el('muat-bayaran').hidden = mulai >= total;
   } catch (error) {
     kotak.innerHTML = `<tr><td colspan="6">${kosong(error.message)}</td></tr>`;
@@ -129,8 +208,9 @@ function gambarKopCetak(jumlah, ringkasan) {
   const kotak = el('kop-cetak');
   if (!kotak) return;
 
-  const formulir = el('cari-bayaran');
-  const nilai = (nama) => (formulir.elements[nama]?.value ?? '').trim();
+  // Mengikuti filter yang berlaku, bukan isian formulir: kop pada kertas harus
+  // menerangkan tabel yang tercetak di bawahnya.
+  const nilai = (nama) => kriteriaBerlaku.get(nama) ?? '';
   const namaBulan = nilai('bulan') ? NAMA_BULAN[Number(nilai('bulan')) - 1] : 'Semua';
 
   const pasangan = [
@@ -248,7 +328,7 @@ function kosongkanHasil() {
   total = 0;
 
   el('isi-tabel-bayaran').innerHTML =
-    `<tr><td colspan="6">${kosong('Hasil dikosongkan setelah PDF disimpan. Ubah filter atau tekan Reset Filter untuk mencari lagi.')}</td></tr>`;
+    `<tr><td colspan="6">${kosong('Hasil dikosongkan setelah PDF disimpan. Tekan Cari / Terapkan Filter untuk menampilkannya lagi.')}</td></tr>`;
   el('ringkasan-bayaran').innerHTML = '';
   el('muat-bayaran').hidden = true;
 
@@ -305,16 +385,35 @@ export function pasangKendaliBayaran() {
     ...Array.from({ length: 7 }, (_, i) => String(tahunIni + 1 - i)).map((t) => new Option(t, t))
   );
 
-  let tunda;
-  formulir.addEventListener('input', (peristiwa) => {
-    clearTimeout(tunda);
-    // Ketikan diberi jeda; pilihan tanggal dan centang langsung dijalankan.
-    tunda = setTimeout(() => cariBayaran(), peristiwa.target.type === 'search' ? 350 : 0);
+  // Pencarian tidak berjalan sendiri saat isian berubah. Menyusun beberapa
+  // filter sekaligus — nama, bulan, tahun, lalu rentang tanggal — akan memicu
+  // beberapa permintaan setengah jadi, dan hasil antaranya sempat terlihat
+  // seolah itu jawabannya. Satu tombol, satu pencarian.
+  const terapkan = () => {
+    const isian = kriteriaFormulir();
+    const keliru = periksaRentang(isian.get('dari'), isian.get('sampai'));
+    if (keliru) {
+      pesanCari('gagal', keliru);
+      return;
+    }
+    pesanCari('', '');
+    cariBayaran();
+  };
+
+  // Menekan Enter di dalam formulir sama artinya dengan menekan tombolnya.
+  formulir.addEventListener('submit', (peristiwa) => {
+    peristiwa.preventDefault();
+    terapkan();
   });
-  formulir.addEventListener('submit', (peristiwa) => peristiwa.preventDefault());
+
+  el('terapkan-bayaran').addEventListener('click', (peristiwa) => {
+    peristiwa.preventDefault();
+    terapkan();
+  });
 
   el('reset-bayaran').addEventListener('click', () => {
     formulir.reset();
+    pesanCari('', '');
     cariBayaran();
   });
 
