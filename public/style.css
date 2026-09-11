@@ -518,3 +518,37 @@ dialog .tombol-lembut, dialog .tombol { margin-top: 0; }
   thead { display: table-header-group; }
   tr, td, th { break-inside: avoid; page-break-inside: avoid; }
 }
+
+/* --------------------------------------------------------------------------
+   Hasil import rekening koran
+   -------------------------------------------------------------------------- */
+.hasil-impor:empty { display: none; }
+.hasil-impor { margin-top: 14px; }
+.hasil-impor h4 {
+  margin: 0 0 4px;
+  font-size: 12px; font-weight: 600;
+  letter-spacing: .5px; text-transform: uppercase;
+  color: var(--teks-redup);
+}
+
+.daftar-hasil { list-style: none; margin: 12px 0 0; padding: 0; display: grid; gap: 8px; }
+.hasil-berkas {
+  padding: 10px 12px;
+  background: var(--latar);
+  border-radius: 11px;
+  border-left: 3px solid var(--garis);
+  display: grid; gap: 2px;
+}
+.hasil-berkas strong { font-size: 13px; }
+.hasil-berkas small, .hasil-berkas span, .hasil-berkas em {
+  font-size: 11.5px; color: var(--teks-redup); font-style: normal;
+}
+/* Warna menandai apa yang perlu diperhatikan, bukan sekadar menghias. */
+.hasil-berkas.status-selesai  { border-left-color: var(--hijau); }
+.hasil-berkas.status-sebagian { border-left-color: var(--aksen); }
+.hasil-berkas.status-duplikat { border-left-color: var(--teks-redup); }
+.hasil-berkas.status-gagal    { border-left-color: var(--merah); }
+.hasil-berkas.status-gagal em { color: var(--merah); }
+
+/* Lipatan di dalam panel, bukan panel tersendiri. */
+.lipat-dalam { margin-top: 14px; padding: 0; background: none; border: 0; }

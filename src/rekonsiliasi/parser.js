@@ -100,6 +100,9 @@ export function uraiTabel(baris, { berkasSumber = '' } = {}) {
       referensi: String(ambil(baris_, 'referensi') ?? '').trim() || null,
       masalah,
       duplikat: false,
+      // Nomor urut di antara transaksi yang benar-benar kembar dalam berkas
+      // ini. Ditetapkan di bawah, setelah seluruh baris terbaca.
+      kembar_ke: 1,
       status_data: masalah.length === 0 ? 'valid' : 'perlu_diperiksa',
     });
   }
@@ -108,16 +111,26 @@ export function uraiTabel(baris, { berkasSumber = '' } = {}) {
 
   // Duplikat ditandai, bukan dibuang: dua transaksi identik pada hari yang sama
   // itu wajar, dan hanya orang yang tahu konteksnya bisa memutuskan.
+  //
+  // Nomor kembarnya sekaligus ditetapkan di sini. Nomor itulah yang membedakan
+  // dua penarikan sungguhan bernominal sama pada hari yang sama dari satu
+  // transaksi yang tersisip dua kali karena berkasnya diunggah ulang: yang
+  // pertama menghasilkan nomor 1 dan 2 di kedua unggahan, yang kedua
+  // menghasilkan nomor yang sama persis sehingga tertolak sebagai duplikat.
+  // Karena penomorannya mengikuti urutan baris di berkas, berkas yang sama
+  // selalu menghasilkan nomor yang sama.
   const terlihat = new Map();
   for (const t of transaksi) {
     if (!t.tanggal) continue;
     const kunci = kunciDuplikat(t);
-    if (terlihat.has(kunci)) {
+    const sebelumnya = terlihat.get(kunci) ?? 0;
+    t.kembar_ke = sebelumnya + 1;
+    terlihat.set(kunci, t.kembar_ke);
+
+    if (sebelumnya > 0) {
       t.duplikat = true;
       t.status_data = 'perlu_diperiksa';
       if (!t.masalah.includes('Duplikat.')) t.masalah.push('Duplikat.');
-    } else {
-      terlihat.set(kunci, t);
     }
   }
 

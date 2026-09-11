@@ -57,6 +57,24 @@ export function cariKolom(baris) {
   return null;
 }
 
+/**
+ * Nomor rekening dari kop halaman.
+ *
+ * Ikut menyusun sidik jari transaksi, sehingga dua rekening berbeda yang
+ * kebetulan punya transaksi serupa tidak saling menganggap duplikat. Kalau
+ * tidak ketemu, dikembalikan null dan sidik jarinya cukup dibentuk dari sisanya
+ * — lebih baik daripada menolak berkasnya.
+ */
+export function cariNoRekening(halaman) {
+  for (const potong of halaman.flat().slice(0, 60)) {
+    const teks = teksBaris(potong);
+    if (!/no\.?\s*rekening/i.test(teks)) continue;
+    const cocok = teks.match(/no\.?\s*rekening\s*:?\s*([0-9][0-9\s-]{5,})/i);
+    if (cocok) return cocok[1].replace(/[\s-]/g, '');
+  }
+  return null;
+}
+
 /** Periode menentukan tahun, yang tidak pernah dicetak di baris transaksi. */
 export function cariPeriode(halaman) {
   const awal = halaman.flat().slice(0, 60);
@@ -219,5 +237,5 @@ export function tabelDariBaris(halaman) {
     tabel[i][5] = referensiDari(tabel[i][1]) ?? '';
   }
 
-  return { tabel, periode };
+  return { tabel, periode, noRekening: cariNoRekening(halaman) };
 }

@@ -7,6 +7,7 @@
 import {
   aman, ambil, el, kosong, formatTanggalPolos, formatNominal, rupiah, tanggal,
 } from './bantuan.js';
+import { imporBerkas, muatRiwayatImpor } from './impor.js';
 
 const NAMA_BULAN = [
   'Januari', 'Februari', 'Maret', 'April', 'Mei', 'Juni',
@@ -150,51 +151,6 @@ async function muatStatusKoran() {
   }
 }
 
-/**
- * Mengunggah rekening koran dari halaman audit.
- *
- * Menembak endpoint unggah milik Rekonsiliasi Bank, bukan endpoint tersendiri.
- * Audit dan rekonsiliasi membaca transaksi dari tabel yang sama, jadi dua jalur
- * penyimpanan akan membuat satu rekening koran yang sama masuk dua kali dan
- * mustahil dicocokkan dengan benar.
- */
-async function unggahKoran(berkas) {
-  const kotak = el('pesan-koran-audit');
-  const tampil = (kelas, teks) => {
-    kotak.className = `pesan ${kelas}`;
-    kotak.textContent = teks;
-    kotak.hidden = false;
-  };
-  tampil('', `Membaca ${berkas.name}\u2026`);
-
-  try {
-    const respons = await fetch('/api/rekonsiliasi/unggah', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/octet-stream',
-        'X-Nama-Berkas': encodeURIComponent(berkas.name),
-      },
-      body: berkas,
-    });
-    const isi = await respons.json().catch(() => ({}));
-    if (!respons.ok) throw new Error(isi.pesan ?? `Gagal mengunggah (HTTP ${respons.status}).`);
-
-    const r = isi.ringkasan;
-    const catatan = [];
-    if (r.perlu_diperiksa > 0) catatan.push(`${r.perlu_diperiksa} perlu diperiksa`);
-    if (r.duplikat > 0) catatan.push(`${r.duplikat} duplikat`);
-    if (isi.pernah_diunggah) catatan.push('berkas ini pernah diunggah sebelumnya');
-
-    tampil('berhasil',
-      `${r.total} transaksi diimpor dari ${isi.sheet ?? 'berkas'}` +
-      (catatan.length > 0 ? ` (${catatan.join(', ')}).` : '.'));
-
-    await muatStatusKoran();
-  } catch (error) {
-    tampil('gagal', error.message);
-  }
-}
-
 async function unggahTagihan(berkas) {
   const kotak = el('pesan-tagihan');
   const tampil = (kelas, teks) => {
@@ -310,10 +266,17 @@ export function pasangKendaliAudit() {
     ...Array.from({ length: 7 }, (_, i) => String(tahunIni + 1 - i)).map((t) => new Option(t, t))
   );
 
-  el('berkas-koran-audit').addEventListener('change', (peristiwa) => {
-    const berkas = peristiwa.target.files?.[0];
-    if (berkas) unggahKoran(berkas);
+  el('berkas-koran-audit').addEventListener('change', async (peristiwa) => {
+    const berkas = [...(peristiwa.target.files ?? [])];
     peristiwa.target.value = '';
+    if (berkas.length === 0) return;
+    // Status jumlah transaksi diperbarui setelah seluruh batch selesai, bukan
+    // per berkas: yang ingin diketahui adalah keadaan akhirnya.
+    await imporBerkas(berkas, muatStatusKoran);
+  });
+
+  el('lipat-riwayat').addEventListener('toggle', (peristiwa) => {
+    if (peristiwa.target.open) muatRiwayatImpor();
   });
 
   el('berkas-tagihan').addEventListener('change', (peristiwa) => {

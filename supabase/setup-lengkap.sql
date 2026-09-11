@@ -445,6 +445,110 @@ as $fn$
     and (p_dari   is null or a.tanggal_invoice >= p_dari)
     and (p_sampai is null or a.tanggal_invoice <= p_sampai);
 $fn$;
+--
+--
+--
+alter table transaksi_bank
+  add column if not exists no_rekening text,
+  add column if not exists kembar_ke int not null default 1;
+--
+--
+--
+update transaksi_bank t
+set kembar_ke = u.urutan
+from (
+  select id,
+         row_number() over (
+           partition by
+             coalesce(no_rekening, ''),
+             tanggal,
+             lower(regexp_replace(coalesce(keterangan, ''), '\s+', ' ', 'g')),
+             coalesce(debit, 0),
+             coalesce(kredit, 0),
+             lower(coalesce(referensi, ''))
+           order by dibuat_pada, id
+         ) as urutan
+  from transaksi_bank
+) u
+where t.id = u.id and t.kembar_ke is distinct from u.urutan;
+alter table transaksi_bank
+  add column if not exists sidik text generated always as (
+    md5(
+      coalesce(no_rekening, '') || '|' ||
+      coalesce((tanggal - date '1970-01-01')::text, '') || '|' ||
+      lower(regexp_replace(coalesce(keterangan, ''), '\s+', ' ', 'g')) || '|' ||
+      coalesce(debit, 0)::text || '|' ||
+      coalesce(kredit, 0)::text || '|' ||
+      lower(coalesce(referensi, '')) || '|' ||
+      kembar_ke::text
+    )
+  ) stored;
+create unique index if not exists idx_transaksi_sidik on transaksi_bank (sidik);
+--
+alter table unggahan_rekening_koran
+  add column if not exists no_rekening text,
+  add column if not exists periode_bulan int,
+  add column if not exists periode_tahun int,
+  add column if not exists jumlah_baru int not null default 0,
+  add column if not exists jumlah_sudah_ada int not null default 0,
+  add column if not exists status text not null default 'selesai';
+do $fn$
+begin
+  if not exists (
+    select 1 from pg_constraint
+    where conname = 'status_unggahan_dikenali'
+      and conrelid = 'unggahan_rekening_koran'::regclass
+  ) then
+    alter table unggahan_rekening_koran
+      add constraint status_unggahan_dikenali
+      check (status in ('selesai', 'sebagian', 'duplikat', 'gagal'));
+  end if;
+end
+$fn$;
+create index if not exists idx_unggahan_periode
+  on unggahan_rekening_koran (periode_tahun, periode_bulan);
+--
+create or replace function periode_tersimpan()
+returns table (tahun int, bulan int, jumlah bigint, debit numeric, kredit numeric)
+language sql
+stable
+set search_path = public
+as $fn$
+  select t.tahun, t.bulan, count(*),
+         coalesce(sum(t.debit), 0), coalesce(sum(t.kredit), 0)
+  from transaksi_bank t
+  where t.tanggal is not null
+  group by t.tahun, t.bulan
+  order by t.tahun desc, t.bulan desc;
+$fn$;
+--
+create or replace function periksa_transaksi_ganda()
+returns table (
+  tanggal date, keterangan text, debit numeric, kredit numeric,
+  jumlah_salinan bigint, jumlah_unggahan bigint
+)
+language sql
+stable
+set search_path = public
+as $fn$
+  select
+    t.tanggal,
+    max(t.keterangan),
+    max(t.debit),
+    max(t.kredit),
+    count(*),
+    count(distinct t.unggahan_id)
+  from transaksi_bank t
+  group by
+    coalesce(t.no_rekening, ''),
+    t.tanggal,
+    lower(regexp_replace(coalesce(t.keterangan, ''), '\s+', ' ', 'g')),
+    coalesce(t.debit, 0),
+    coalesce(t.kredit, 0),
+    lower(coalesce(t.referensi, ''))
+  having count(distinct t.unggahan_id) > 1
+  order by t.tanggal desc;
+$fn$;
 
 -- Setelah skema berubah, PostgREST masih memakai peta lama sampai diberi
 -- tahu. Tanpa ini tabel baru tetap dilaporkan "not found in the schema

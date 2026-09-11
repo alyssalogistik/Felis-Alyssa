@@ -154,6 +154,53 @@ adalah pustaka hulunya sendiri dan tidak menambah satu pun peringatan baru pada
 `npm audit`. Impornya ditunda sampai benar-benar ada PDF yang dibaca, supaya
 unggahan xlsx tidak menanggung biayanya.
 
+## Impor rekening koran bulanan
+
+Satu batch: maksimal dua belas berkas dan maksimal rentang dua belas bulan.
+Batas itu berlaku untuk satu kali impor saja — database tetap boleh menyimpan
+riwayat bertahun-tahun.
+
+Urutannya tidak boleh bergantung pada urutan pemakai memilih berkas. Periode
+setiap berkas dibaca lebih dulu lewat `POST /api/rekonsiliasi/periode`, yang
+mengurai PDF **tanpa menyimpan apa pun**, lalu batch diurutkan dari bulan
+terlama. Pemeriksaan batas juga terjadi di langkah itu: menolak di tengah jalan
+akan meninggalkan sebagian bulan sudah masuk dan sebagian belum, dan tidak ada
+cara sederhana bagi pemakainya untuk tahu sampai mana.
+
+Aturan batch ada di `public/batch.js` — murni, tanpa DOM — sehingga pengurutan
+dan penghitungan rentang bisa diuji tanpa peramban. Perhitungan rentangnya
+inklusif: April 2025 sampai Maret 2026 adalah dua belas bulan, bukan sebelas.
+
+### Sidik jari transaksi
+
+Penjaga duplikat bukan hash berkas. Mengganti nama PDF tidak mengubah hash-nya,
+tetapi mengunduh ulang e-statement yang sama dari myBCA bisa menghasilkan berkas
+berbeda byte walau isinya identik. Yang dibandingkan adalah isi transaksinya:
+kolom `sidik` pada `transaksi_bank`, dihitung database dari nomor rekening,
+tanggal, keterangan yang diseragamkan huruf dan spasinya, debit, kredit,
+referensi, dan `kembar_ke`. Indeks uniknya yang benar-benar menahan, bukan
+pemeriksaan di aplikasi.
+
+**`kembar_ke` adalah bagian yang paling mudah dirusak.** Dua penarikan
+bernominal sama pada hari yang sama, tanpa nomor rujukan, adalah transaksi
+sungguhan yang berbeda. Tanpa nomor urut itu, yang kedua akan ditolak sebagai
+duplikat dan uang yang benar-benar keluar hilang dari catatan. Nomornya
+ditetapkan `uraiTabel()` mengikuti urutan baris di berkas, sehingga berkas yang
+sama selalu menghasilkan nomor yang sama dan unggahan ulang tetap tertolak.
+
+Penyisipan memakai `upsert` dengan `ignoreDuplicates` — `ON CONFLICT DO NOTHING`,
+bukan update. Transaksi lama tidak pernah ditimpa. Jumlah yang benar-benar
+tersisip dibaca dari baris yang dikembalikan database, bukan ditebak aplikasi.
+
+### Database yang sudah telanjur berisi ganda
+
+Migration `0006` tidak menghapus apa pun. Baris yang sudah telanjur kembar
+dinomori agar indeks uniknya bisa berdiri; nilai transaksinya tidak berubah
+sedikit pun. Yang telanjur ganda **tetap ada dan tetap terhitung** — pakai
+`periksa_transaksi_ganda()` untuk melihat mana saja, lalu putuskan sendiri.
+Fungsi itu hanya melaporkan transaksi serupa yang datang dari unggahan berbeda,
+karena kembar di dalam satu unggahan yang sama memang lazim.
+
 ## Halaman audit: pencarian dulu, pencocokan belakangan
 
 Pertanyaan yang benar-benar dijawab halaman ini adalah "supplier ini sudah saya
