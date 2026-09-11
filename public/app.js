@@ -6,7 +6,8 @@ import {
 } from './bantuan.js';
 import { pasangKendaliRekonsiliasi, muatRekonsiliasi } from './rekonsiliasi.js';
 import { pasangKendaliAudit, muatAudit } from './audit.js';
-import { pasangKendaliBayaran, cariBayaran } from './bayaran.js';
+import { pasangKendaliBayaran, cariBayaran, cariSupplier } from './bayaran.js';
+import { pasangKendaliSupplier, muatSupplier } from './supplier.js';
 
 const STATUS = {
   baru:       'Baru',
@@ -236,7 +237,7 @@ function arahkan() {
 
   if (nama === 'beranda') muatBeranda();
   else if (nama === 'rekonsiliasi') muatRekonsiliasi();
-  else if (nama === 'audit') { muatAudit(); cariBayaran(); }
+  else if (nama === 'audit') { muatAudit(); muatSupplier(); cariBayaran(); }
   else if (nama === 'trip') muatTrip();
   else if (nama === 'detail') muatDetail(bagian[1]);
   else if (nama === 'pesanan') {
@@ -334,6 +335,7 @@ el('form-lacak').addEventListener('submit', async (peristiwa) => {
 pasangKendaliRekonsiliasi();
 pasangKendaliAudit();
 pasangKendaliBayaran();
+pasangKendaliSupplier(cariSupplier);
 
 window.addEventListener('hashchange', arahkan);
 arahkan();

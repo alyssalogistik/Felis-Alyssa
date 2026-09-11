@@ -270,6 +270,34 @@ Aturan penyaringan hidup di dua tempat yang sengaja dijaga cermin: `saring()` di
 `saringan.js` (murni, teruji) dan `terapkanKriteria()` di `api.js` (dijalankan
 database). Kalau salah satu diubah, ubah keduanya.
 
+### Daftar supplier disusun dari keterangan bank
+
+Panel "Supplier di Rekening Koran" menghapus langkah "ingat lalu ketik nama".
+Namanya diturunkan `src/rekonsiliasi/nama.js` dari keterangan transaksi — tidak
+ada tabel supplier yang harus diisi lebih dulu, dan `GET /api/rekonsiliasi/supplier`
+memindai seluruh baris, bukan satu halaman.
+
+Daftarnya jalan pintas, **bukan** sumber kebenaran. Mengklik satu nama hanya
+mengisi kotak pencarian lalu menjalankan `cariBayaran()` yang sama persis
+dengan mengetik sendiri, jadi tidak ada jalur data kedua yang bisa menyimpang
+dari tabel di bawahnya. `cariSupplier()` mengosongkan filter lain lebih dulu:
+bulan atau rentang tanggal yang masih menempel membuat hasilnya hanya sebagian
+transfer supplier itu.
+
+Nama diambil dari rentetan kata terakhir yang tidak memuat angka — BCA menaruh
+kode, tanggal, dan nominal di depan. **Kata tempelan dikupas dari kedua ujung.**
+Mengupas ujung depan saja pernah memecah SUGENG RIYANTO menjadi tiga baris
+karena "ANGSURAN" dan "PELUNASAN" ada di belakang nama; daftarnya menyebut
+Rp2.500.000 padahal yang keluar Rp7.250.000.
+
+Arah kesalahan yang dipilih sadar: nama yang memuat nama lain yang lebih pendek
+dilipat ke yang pendek, sehingga dua orang berbeda bisa tergabung dan totalnya
+menjadi terlalu besar. Kebalikannya jauh lebih berbahaya — satu orang terpecah,
+totalnya terlalu kecil, terbaca sebagai kurang bayar, lalu dibayar untuk kedua
+kalinya. Nama berkata tunggal tidak pernah jadi sasaran pelipatan ("BUDI" akan
+menelan "BUDI SANTOSO" bersama "BUDI HARTONO"), dan semua yang digabung
+dilaporkan sebagai varian supaya bisa diperiksa mata.
+
 ### Filter dijalankan lewat tombol, bukan saat mengetik
 
 Pencarian hanya berjalan ketika "Cari / Terapkan Filter" ditekan. Menyusun

@@ -273,6 +273,49 @@ api.get('/periode-tersimpan', jalur(async (_req, res) => {
   res.json({ data: data ?? [] });
 }));
 
+// --- Daftar supplier dari rekening koran ------------------------------------
+
+/**
+ * Nama yang muncul di keterangan rekening koran, beserta rekap uang keluarnya.
+ *
+ * Tujuannya menghapus langkah "ingat lalu ketik nama supplier": daftar ini
+ * cukup diklik. Namanya diturunkan dari keterangan bank, bukan dari daftar
+ * supplier yang harus diisi lebih dulu.
+ *
+ * Seluruh baris ditarik, bukan satu halaman. Rekap yang dihitung dari sebagian
+ * transaksi akan menampilkan total yang terlalu kecil, dan di halaman ini
+ * angka yang terlalu kecil terbaca sebagai kurang bayar — lalu dibayar dua
+ * kali. BATAS_PINDAI menahan kalau rekening korannya sudah bertahun-tahun;
+ * bila tercapai, jawabannya menyebut bahwa rekapnya belum mencakup semua.
+ */
+const BATAS_PINDAI = 20000;
+const UKURAN_PINDAI = 1000;
+
+api.get('/supplier', jalur(async (_req, res) => {
+  const { daftarSupplier } = await import('./nama.js');
+
+  const baris = [];
+  let lengkap = true;
+
+  for (let mulai = 0; mulai < BATAS_PINDAI; mulai += UKURAN_PINDAI) {
+    const { data, error } = await db
+      .from(TABEL_TAMPIL)
+      .select('keterangan, debit, tanggal, kredit')
+      .gt('debit', 0)
+      .order('tanggal', { ascending: false, nullsFirst: false })
+      .range(mulai, mulai + UKURAN_PINDAI - 1);
+
+    if (error) throw error;
+    if (!data || data.length === 0) break;
+
+    baris.push(...data);
+    if (data.length < UKURAN_PINDAI) break;
+    if (mulai + UKURAN_PINDAI >= BATAS_PINDAI) lengkap = false;
+  }
+
+  res.json({ data: daftarSupplier(baris), dipindai: baris.length, lengkap });
+}));
+
 // --- Daftar transaksi + ringkasan ------------------------------------------
 
 api.get('/transaksi', jalur(async (req, res) => {
