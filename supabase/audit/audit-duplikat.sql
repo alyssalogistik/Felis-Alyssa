@@ -27,6 +27,7 @@ with dasar as (
     t.id, t.unggahan_id, t.tanggal, t.bulan, t.tahun,
     t.keterangan, t.debit, t.kredit, t.referensi, t.dibuat_pada,
     md5(
+      lower(coalesce(to_jsonb(t) ->> 'no_rekening', ''))             || '|' ||
       coalesce((t.tanggal - date '1970-01-01')::text, '')            || '|' ||
       lower(regexp_replace(coalesce(t.keterangan, ''), '\s+', ' ', 'g')) || '|' ||
       coalesce(t.debit,  0)::text                                    || '|' ||
@@ -89,10 +90,10 @@ laporan as (
   select 1, 1, '1. RINGKASAN', 'Transaksi unik (bila duplikat dihapus)',
          (a.total - a.duplikat)::text from angka a
   union all
-  select 1, 2, '1. RINGKASAN', 'SUSPECTED DUPLICATE (salinan berlebih)',
+  select 1, 2, '1. RINGKASAN', 'DUPLICATE ROWS (salinan berlebih, yang akan dihapus)',
          a.duplikat::text from angka a
   union all
-  select 1, 3, '1. RINGKASAN', 'Transaksi yang punya salinan',
+  select 1, 3, '1. RINGKASAN', 'DUPLICATE GROUPS (transaksi yang punya salinan)',
          a.transaksi_terdampak::text from angka a
   union all
   select 1, 4, '1. RINGKASAN', 'Persentase duplikat',
