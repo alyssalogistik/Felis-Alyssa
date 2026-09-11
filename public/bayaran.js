@@ -375,6 +375,29 @@ async function simpanPdf() {
   }
 }
 
+/**
+ * Menjalankan pencarian untuk satu supplier yang dipilih dari daftar.
+ *
+ * Filter lain sengaja dikosongkan lebih dulu. Kalau bulan atau rentang tanggal
+ * dari pencarian sebelumnya masih menempel, hasilnya hanya sebagian transfer
+ * supplier itu — dan sebagian di halaman ini terbaca sebagai kurang bayar,
+ * lalu dibayar untuk kedua kalinya.
+ *
+ * Sesudahnya alurnya sama persis dengan mengetik nama lalu menekan tombol:
+ * tidak ada jalur pengambilan data tersendiri untuk daftar supplier.
+ */
+export function cariSupplier(nama) {
+  const formulir = el('cari-bayaran');
+  if (!formulir) return;
+
+  formulir.reset();
+  formulir.elements.cari.value = nama;
+  pesanCari('', '');
+  cariBayaran();
+
+  formulir.scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
+
 export function pasangKendaliBayaran() {
   const formulir = el('cari-bayaran');
   if (!formulir) return;

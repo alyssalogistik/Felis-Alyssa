@@ -265,6 +265,22 @@
       </details>
     </div>
 
+    <section class="panel" id="panel-supplier">
+      <h3>Supplier di Rekening Koran</h3>
+      <p class="keterangan-panel">
+        Nama yang muncul di keterangan rekening koran, beserta total uang keluar
+        ke masing-masing. Klik satu nama untuk melihat seluruh transfernya.
+      </p>
+
+      <label>Saring nama
+        <input id="saring-supplier" type="search" placeholder="Ketik sebagian nama"
+               autocomplete="off">
+      </label>
+
+      <div id="daftar-supplier" class="daftar-supplier" aria-live="polite"></div>
+      <p id="pesan-supplier" class="pesan" hidden></p>
+    </section>
+
     <form class="panel" id="cari-bayaran">
       <h3>Cari Pembayaran Supplier</h3>
       <p class="keterangan-panel">
