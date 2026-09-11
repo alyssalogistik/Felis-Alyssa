@@ -211,6 +211,26 @@ Dua perapian kata kunci yang wajib dipertahankan:
   menganggapnya galat, hanya mengembalikan kosong — dan kosong di halaman ini
   terbaca sebagai "belum dibayar".
 
+### Seluruh hasil masuk ke tabel, bukan satu halaman
+
+Setelah pencarian dijalankan, halaman berikutnya ditarik otomatis sampai seluruh
+hasil yang cocok ada di tabel. Auditor yang melihat sebagian daftar akan
+menyimpulkan supplier kurang dibayar padahal sisanya hanya belum dimuat.
+
+Pagarnya `BATAS_MUATAN` (2000 baris) supaya pencarian tanpa kata kunci di atas
+rekening koran bertahun-tahun tidak menarik puluhan ribu baris sekaligus;
+sisanya diambil lewat tombol "Muat lebih banyak", yang hanya muncul bila pagar
+itu benar-benar tercapai.
+
+Jumlah dan totalnya sendiri tidak bergantung pada pemuatan itu: keduanya datang
+dari database sejak permintaan pertama — `count: 'exact'` untuk jumlah, dan
+fungsi `ringkasan_transaksi_bank()` untuk totalnya — sehingga angkanya sudah
+benar bahkan sebelum baris terakhir selesai dimuat.
+
+Tidak ada satu pun nilai transaksi yang tertanam di kode. Kalau suatu saat ada
+yang tergoda menambahkan contoh untuk mempermudah pengembangan, ingat bahwa
+halaman ini dipakai memutuskan apakah seseorang sudah dibayar.
+
 ## Cetak dan Simpan PDF
 
 Dokumen resminya dibuat di **server** (`src/rekonsiliasi/cetak.js`, pdfkit),

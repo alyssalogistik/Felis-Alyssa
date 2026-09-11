@@ -16,7 +16,21 @@ const NAMA_BULAN = [
   'Juli', 'Agustus', 'September', 'Oktober', 'November', 'Desember',
 ];
 
-const BATAS = 50;
+/** Baris per permintaan. 200 adalah batas atas yang diterima endpoint. */
+const BATAS = 200;
+
+/**
+ * Pagar jumlah baris yang ditarik dalam satu pencarian.
+ *
+ * Hasil pencarian supplier harus tampil seluruhnya, bukan sepotong: auditor
+ * yang melihat sebagian daftar akan menyimpulkan supplier kurang dibayar
+ * padahal sisanya hanya belum dimuat. Karena itu halaman berikutnya diambil
+ * otomatis sampai habis. Pagarnya tetap ada supaya pencarian tanpa kata kunci
+ * di atas rekening koran bertahun-tahun tidak menarik puluhan ribu baris
+ * sekaligus; sisanya diambil lewat tombol.
+ */
+const BATAS_MUATAN = 2000;
+
 let mulai = 0;
 let total = 0;
 
@@ -128,37 +142,53 @@ export async function cariBayaran(lanjut = false) {
   if (!lanjut) {
     mulai = 0;
     // Potret diambil sekali di sini. Halaman berikutnya memakai potret yang
-    // sama, sehingga "Muat lebih banyak" tidak pernah menyambung hasil dari
-    // dua filter yang berbeda.
+    // sama, sehingga sambungan hasil tidak pernah bercampur dua filter.
     kriteriaBerlaku = kriteriaFormulir();
-  }
 
-  const parameter = new URLSearchParams(kriteriaBerlaku);
-  const adaKataKunci = (parameter.get('cari') ?? '') !== '';
-  const hanyaDebit = parameter.get('hanya_debit') === '1';
-
-  parameter.set('batas', String(BATAS));
-  parameter.set('mulai', String(mulai));
-
-  // Pesan "hasil dikosongkan" milik pencarian sebelumnya tidak boleh menempel
-  // di atas hasil yang baru.
-  if (!lanjut) {
+    // Pesan "hasil dikosongkan" milik pencarian sebelumnya tidak boleh
+    // menempel di atas hasil yang baru.
     kotak.innerHTML = `<tr><td colspan="6">${kosong('Mencari…')}</td></tr>`;
     pesanCetak('', '');
   }
 
+  const adaKataKunci = (kriteriaBerlaku.get('cari') ?? '') !== '';
+  const hanyaDebit = kriteriaBerlaku.get('hanya_debit') === '1';
+
+  const berhenti = mulai + BATAS_MUATAN;
+  let pertama = !lanjut;
+  let ringkasan = null;
+
   try {
-    const hasil = await ambil(`/rekonsiliasi/transaksi?${parameter}`);
-    total = hasil.total ?? 0;
+    // Ditarik berulang sampai seluruh hasil yang cocok masuk ke tabel. Jumlah
+    // dan totalnya sendiri datang dari database sejak permintaan pertama, jadi
+    // angkanya sudah benar bahkan sebelum baris terakhir selesai dimuat.
+    for (;;) {
+      const parameter = new URLSearchParams(kriteriaBerlaku);
+      parameter.set('batas', String(BATAS));
+      parameter.set('mulai', String(mulai));
 
-    const isi = hasil.data.map(baris).join('');
-    if (lanjut) kotak.insertAdjacentHTML('beforeend', isi);
-    else kotak.innerHTML = isi || `<tr><td colspan="6">${kosong('Tidak ada hasil.')}</td></tr>`;
+      const hasil = await ambil(`/rekonsiliasi/transaksi?${parameter}`);
+      total = hasil.total ?? 0;
+      ringkasan = hasil.ringkasan;
 
-    tampilRingkasan(total, hasil.ringkasan, adaKataKunci, hanyaDebit);
-    gambarKopCetak(total, hasil.ringkasan);
+      const isi = hasil.data.map(baris).join('');
+      if (pertama) {
+        kotak.innerHTML = isi || `<tr><td colspan="6">${kosong('Tidak ada hasil.')}</td></tr>`;
+        pertama = false;
+      } else if (isi !== '') {
+        kotak.insertAdjacentHTML('beforeend', isi);
+      }
 
-    mulai += hasil.data.length;
+      mulai += hasil.data.length;
+
+      // Halaman kosong menghentikan pengulangan walau hitungan mengatakan masih
+      // ada sisa; tanpa penjaga ini satu hitungan yang meleset akan berputar
+      // selamanya.
+      if (hasil.data.length === 0 || mulai >= total || mulai >= berhenti) break;
+    }
+
+    tampilRingkasan(total, ringkasan, adaKataKunci, hanyaDebit);
+    gambarKopCetak(total, ringkasan);
     el('muat-bayaran').hidden = mulai >= total;
   } catch (error) {
     kotak.innerHTML = `<tr><td colspan="6">${kosong(error.message)}</td></tr>`;
