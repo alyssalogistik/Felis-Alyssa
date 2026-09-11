@@ -188,6 +188,29 @@ Aturan penyaringan hidup di dua tempat yang sengaja dijaga cermin: `saring()` di
 `saringan.js` (murni, teruji) dan `terapkanKriteria()` di `api.js` (dijalankan
 database). Kalau salah satu diubah, ubah keduanya.
 
+### Filter dijalankan lewat tombol, bukan saat mengetik
+
+Pencarian hanya berjalan ketika "Cari / Terapkan Filter" ditekan. Menyusun
+beberapa filter sekaligus — nama, lalu bulan, lalu tahun, lalu rentang tanggal —
+akan memicu beberapa permintaan setengah jadi bila setiap perubahan langsung
+dijalankan, dan hasil antaranya sempat terlihat seolah itu jawabannya.
+
+Konsekuensinya isian formulir bisa berbeda dari hasil yang sedang tampak.
+Karena itu ada `kriteriaBerlaku`: potret filter yang diambil saat pencarian
+dijalankan, dan itulah acuan tunggal bagi tabel, ringkasan, kop cetak, laporan
+PDF, dan ekspor. Membaca isian formulir langsung akan membuat berkas yang
+diunduh memuat filter yang belum pernah dijalankan — berbeda dari tabel yang
+dilihat pemakainya, tanpa gejala apa pun.
+
+Dua perapian kata kunci yang wajib dipertahankan:
+
+- **Spasi ganda di tengah dirapatkan**, bukan hanya dipangkas di ujung.
+  Pencocokannya harfiah, sehingga "SUGENG  RIYANTO" berspasi dua tidak akan
+  pernah cocok dengan "SUGENG RIYANTO" di rekening koran.
+- **Rentang tanggal terbalik ditolak sebelum dikirim.** Database tidak
+  menganggapnya galat, hanya mengembalikan kosong — dan kosong di halaman ini
+  terbaca sebagai "belum dibayar".
+
 ## Cetak dan Simpan PDF
 
 Dokumen resminya dibuat di **server** (`src/rekonsiliasi/cetak.js`, pdfkit),

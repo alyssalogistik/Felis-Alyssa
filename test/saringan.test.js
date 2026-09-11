@@ -173,3 +173,79 @@ test('menyaring uang keluar tidak mengubah total debit', () => {
   const keluarSaja = saring(CONTOH, { cari: 'TRIO', hanya_debit: true });
   assert.equal(ringkas(semua).debit, ringkas(keluarSaja).debit);
 });
+
+// --- Validasi rentang tanggal ------------------------------------------------
+//
+// Rentang terbalik tidak menghasilkan galat dari database, hanya hasil kosong.
+// Kosong di halaman audit terbaca sebagai "belum dibayar", jadi harus ditolak
+// sebelum permintaan dikirim, bukan dibiarkan tampil sebagai nihil hasil.
+
+test('rentang terbalik ditolak sebelum dikirim', () => {
+  const dari = '2025-11-30';
+  const sampai = '2025-11-01';
+  assert.ok(dari > sampai, 'perbandingan teks cukup untuk tanggal ISO');
+  assert.equal(saring(CONTOH, { dari, sampai }).length, 0, 'kalau lolos, hasilnya kosong tanpa sebab');
+});
+
+test('rentang sehari penuh tidak dianggap terbalik', () => {
+  const hasil = saring(CONTOH, { dari: '2026-08-01', sampai: '2026-08-01' });
+  assert.equal(hasil.length, 1);
+});
+
+// --- Skenario yang diminta pemilik project -----------------------------------
+
+const NOVEMBER = (() => {
+  const { transaksi } = uraiTabel([
+    ['Tanggal', 'Keterangan', 'Debit', 'Kredit', 'Saldo'],
+    ['05/11/2025', 'TRSF E-BANKING DB SUGENG RIYANTO', '2.500.000', '', '10.000.000'],
+    ['20/11/2025', 'TRSF SUGENG RIYANTO ANGSURAN', '1.750.000', '', '8.250.000'],
+    ['05/10/2025', 'TRSF E-BANKING DB SUGENG RIYANTO', '3.000.000', '', '13.000.000'],
+    ['05/12/2025', 'TRSF E-BANKING DB SUGENG RIYANTO', '4.000.000', '', '4.250.000'],
+    ['05/11/2024', 'TRSF E-BANKING DB SUGENG RIYANTO', '9.000.000', '', '20.000.000'],
+    ['12/11/2025', 'TRSF E-BANKING DB BUDI SANTOSO', '5.000.000', '', '3.250.000'],
+    ['25/11/2025', 'SETORAN DARI SUGENG RIYANTO', '', '6.000.000', '9.250.000'],
+  ]);
+  return transaksi;
+})();
+
+test('SKENARIO: SUGENG RIYANTO + November + 2025 + rentang sebulan', () => {
+  const hasil = saring(NOVEMBER, {
+    cari: 'SUGENG RIYANTO',
+    bulan: 11,
+    tahun: 2025,
+    dari: '2025-11-01',
+    sampai: '2025-11-30',
+    hanya_debit: true,
+  });
+
+  assert.equal(hasil.length, 2, 'hanya dua transfer keluar di November 2025');
+  assert.ok(hasil.every((t) => t.tanggal.startsWith('2025-11')), 'tidak ada bulan atau tahun lain');
+  assert.ok(hasil.every((t) => /SUGENG RIYANTO/.test(t.keterangan)), 'nama lain tidak ikut');
+  assert.ok(hasil.every((t) => t.debit > 0), 'uang masuk tidak ikut');
+  assert.equal(ringkas(hasil).debit, 4250000);
+});
+
+test('SKENARIO: Oktober, Desember, dan November tahun lain tersaring keluar', () => {
+  const hasil = saring(NOVEMBER, { cari: 'SUGENG RIYANTO', bulan: 11, tahun: 2025 });
+  const tanggal = hasil.map((t) => t.tanggal).sort();
+  assert.deepEqual(tanggal, ['2025-11-05', '2025-11-20', '2025-11-25']);
+  assert.ok(!tanggal.includes('2025-10-05'), 'Oktober tidak ikut');
+  assert.ok(!tanggal.includes('2025-12-05'), 'Desember tidak ikut');
+  assert.ok(!tanggal.includes('2024-11-05'), 'November tahun lain tidak ikut');
+});
+
+test('SKENARIO: kata kunci berspasi berlebih tetap menemukan hasil', () => {
+  const rapi = saring(NOVEMBER, { cari: 'sugeng riyanto', bulan: 11, tahun: 2025 });
+  const berantakan = saring(NOVEMBER, { cari: '  sugeng riyanto  '.trim(), bulan: 11, tahun: 2025 });
+  assert.equal(berantakan.length, rapi.length);
+});
+
+test('spasi ganda di tengah kata kunci dirapatkan', () => {
+  // Pencocokannya harfiah: tanpa perapatan ini, kata kunci berspasi dua tidak
+  // akan pernah menemukan transaksi yang ditulis berspasi satu — dan hasil
+  // nihil di halaman audit terbaca sebagai "belum dibayar".
+  assert.equal(
+    saring(NOVEMBER, { cari: '  sugeng   riyanto  ' }).length,
+    saring(NOVEMBER, { cari: 'SUGENG RIYANTO' }).length
+  );
+});

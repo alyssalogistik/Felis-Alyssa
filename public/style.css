@@ -273,6 +273,9 @@ textarea { resize: vertical; }
 /* --- Rekonsiliasi Bank --------------------------------------------------- */
 
 .tombol-blok { display: block; text-align: center; }
+/* Tombol sejati menyusut mengikuti isinya walau display-nya block; span tidak.
+   Lebarnya dipaksa supaya tombol utama terbaca sebagai tindakan utama. */
+button.tombol-blok { width: 100%; margin-top: 14px; }
 .unggah { display: block; margin: 0; cursor: pointer; }
 
 .status-unggah {

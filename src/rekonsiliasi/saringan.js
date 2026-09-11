@@ -8,7 +8,10 @@
 export function saring(transaksi, kriteria = {}) {
   const { cari, bulan, tahun, dari, sampai, hanya_debit: hanyaDebit } = kriteria;
 
-  const kata = typeof cari === 'string' ? cari.trim().toLowerCase() : '';
+  // Spasi ganda dirapatkan, bukan hanya dipangkas di ujung: pencocokannya
+  // harfiah, sehingga "SUGENG  RIYANTO" berspasi dua tidak akan pernah cocok
+  // dengan "SUGENG RIYANTO" yang tertulis di rekening koran.
+  const kata = typeof cari === 'string' ? cari.trim().replace(/\s+/g, ' ').toLowerCase() : '';
   const bulanAngka = bulan === '' || bulan === null || bulan === undefined ? null : Number(bulan);
   const tahunAngka = tahun === '' || tahun === null || tahun === undefined ? null : Number(tahun);
 

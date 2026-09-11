@@ -20,13 +20,56 @@ const BATAS = 50;
 let mulai = 0;
 let total = 0;
 
-/** Filter yang sedang aktif, apa adanya dari formulir. */
-function kriteria() {
+/** Isian formulir apa adanya — belum tentu sudah diterapkan. */
+function kriteriaFormulir() {
   const parameter = new URLSearchParams();
   for (const [nama, nilai] of new FormData(el('cari-bayaran'))) {
-    if (String(nilai).trim() !== '') parameter.set(nama, String(nilai).trim());
+    // Spasi dirapikan di sini sekali, sehingga seluruh jalur di bawahnya
+    // menerima kata kunci yang sudah bersih.
+    //
+    // Bukan hanya ujungnya: spasi ganda di tengah pun dirapatkan. Pencarian
+    // di database memakai pola harfiah, jadi "SUGENG  RIYANTO" berspasi dua
+    // tidak akan pernah cocok dengan "SUGENG RIYANTO" di rekening koran —
+    // dan hasil nihil di halaman ini terbaca sebagai "belum dibayar".
+    const bersih = String(nilai).trim().replace(/\s+/g, ' ');
+    if (bersih !== '') parameter.set(nama, bersih);
   }
   return parameter;
+}
+
+/**
+ * Filter yang benar-benar sedang tampil di layar.
+ *
+ * Sejak pencarian hanya berjalan saat tombol ditekan, isian formulir bisa
+ * berbeda dari hasil yang sedang tampak. Laporan PDF, cetak, dan ekspor
+ * mengacu ke potret ini, bukan ke isian — kalau tidak, berkas yang diunduh
+ * akan memuat filter yang belum pernah dijalankan dan berbeda dari tabel yang
+ * dilihat pemakainya.
+ */
+let kriteriaBerlaku = new URLSearchParams();
+
+function kriteria() {
+  return kriteriaBerlaku;
+}
+
+/**
+ * Rentang tanggal terbalik tidak akan menghasilkan galat dari database, hanya
+ * hasil kosong — dan kosong di halaman ini terbaca sebagai "belum dibayar".
+ * Karena itu diperiksa sebelum permintaan dikirim.
+ */
+export function periksaRentang(dari, sampai) {
+  if (dari && sampai && dari > sampai) {
+    return 'Dari Tanggal lebih besar dari Sampai Tanggal. Tukar keduanya lalu cari lagi.';
+  }
+  return null;
+}
+
+function pesanCari(kelas, teks) {
+  const kotak = el('pesan-cari');
+  if (!kotak) return;
+  kotak.className = `pesan ${kelas}`;
+  kotak.textContent = teks;
+  kotak.hidden = teks === '';
 }
 
 function baris(t) {
@@ -82,9 +125,15 @@ export async function cariBayaran(lanjut = false) {
   const kotak = el('isi-tabel-bayaran');
   if (!kotak) return;
 
-  if (!lanjut) mulai = 0;
+  if (!lanjut) {
+    mulai = 0;
+    // Potret diambil sekali di sini. Halaman berikutnya memakai potret yang
+    // sama, sehingga "Muat lebih banyak" tidak pernah menyambung hasil dari
+    // dua filter yang berbeda.
+    kriteriaBerlaku = kriteriaFormulir();
+  }
 
-  const parameter = kriteria();
+  const parameter = new URLSearchParams(kriteriaBerlaku);
   const adaKataKunci = (parameter.get('cari') ?? '') !== '';
   const hanyaDebit = parameter.get('hanya_debit') === '1';
 
@@ -129,8 +178,9 @@ function gambarKopCetak(jumlah, ringkasan) {
   const kotak = el('kop-cetak');
   if (!kotak) return;
 
-  const formulir = el('cari-bayaran');
-  const nilai = (nama) => (formulir.elements[nama]?.value ?? '').trim();
+  // Mengikuti filter yang berlaku, bukan isian formulir: kop pada kertas harus
+  // menerangkan tabel yang tercetak di bawahnya.
+  const nilai = (nama) => kriteriaBerlaku.get(nama) ?? '';
   const namaBulan = nilai('bulan') ? NAMA_BULAN[Number(nilai('bulan')) - 1] : 'Semua';
 
   const pasangan = [
@@ -248,7 +298,7 @@ function kosongkanHasil() {
   total = 0;
 
   el('isi-tabel-bayaran').innerHTML =
-    `<tr><td colspan="6">${kosong('Hasil dikosongkan setelah PDF disimpan. Ubah filter atau tekan Reset Filter untuk mencari lagi.')}</td></tr>`;
+    `<tr><td colspan="6">${kosong('Hasil dikosongkan setelah PDF disimpan. Tekan Cari / Terapkan Filter untuk menampilkannya lagi.')}</td></tr>`;
   el('ringkasan-bayaran').innerHTML = '';
   el('muat-bayaran').hidden = true;
 
@@ -305,16 +355,35 @@ export function pasangKendaliBayaran() {
     ...Array.from({ length: 7 }, (_, i) => String(tahunIni + 1 - i)).map((t) => new Option(t, t))
   );
 
-  let tunda;
-  formulir.addEventListener('input', (peristiwa) => {
-    clearTimeout(tunda);
-    // Ketikan diberi jeda; pilihan tanggal dan centang langsung dijalankan.
-    tunda = setTimeout(() => cariBayaran(), peristiwa.target.type === 'search' ? 350 : 0);
+  // Pencarian tidak berjalan sendiri saat isian berubah. Menyusun beberapa
+  // filter sekaligus — nama, bulan, tahun, lalu rentang tanggal — akan memicu
+  // beberapa permintaan setengah jadi, dan hasil antaranya sempat terlihat
+  // seolah itu jawabannya. Satu tombol, satu pencarian.
+  const terapkan = () => {
+    const isian = kriteriaFormulir();
+    const keliru = periksaRentang(isian.get('dari'), isian.get('sampai'));
+    if (keliru) {
+      pesanCari('gagal', keliru);
+      return;
+    }
+    pesanCari('', '');
+    cariBayaran();
+  };
+
+  // Menekan Enter di dalam formulir sama artinya dengan menekan tombolnya.
+  formulir.addEventListener('submit', (peristiwa) => {
+    peristiwa.preventDefault();
+    terapkan();
   });
-  formulir.addEventListener('submit', (peristiwa) => peristiwa.preventDefault());
+
+  el('terapkan-bayaran').addEventListener('click', (peristiwa) => {
+    peristiwa.preventDefault();
+    terapkan();
+  });
 
   el('reset-bayaran').addEventListener('click', () => {
     formulir.reset();
+    pesanCari('', '');
     cariBayaran();
   });
 
