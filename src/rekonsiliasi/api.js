@@ -134,6 +134,9 @@ api.post(
         nama_berkas: namaBerkas,
         hash_berkas: hash,
         sheet: hasil.sheet,
+        no_rekening: hasil.noRekening ?? null,
+        periode_bulan: hasil.periode?.bulan ?? null,
+        periode_tahun: hasil.periode?.tahun ?? null,
         baris_header: hasil.barisHeader,
         jumlah_transaksi: ringkasan.total,
         jumlah_valid: ringkasan.valid,
@@ -159,23 +162,102 @@ api.post(
       status_data: t.status_data,
       masalah: t.masalah,
       duplikat: t.duplikat,
+      no_rekening: hasil.noRekening ?? null,
+      kembar_ke: t.kembar_ke ?? 1,
     }));
 
+    // upsert dengan ignoreDuplicates menghasilkan ON CONFLICT DO NOTHING:
+    // transaksi yang sidik jarinya sudah ada dilewati, bukan ditimpa. Yang
+    // kembali dari .select() hanyalah baris yang benar-benar tersisip, jadi
+    // hitungannya datang dari database, bukan dari tebakan aplikasi.
+    let jumlahBaru = 0;
     for (let i = 0; i < baris.length; i += UKURAN_BATCH) {
-      const { error } = await db.from('transaksi_bank').insert(baris.slice(i, i + UKURAN_BATCH));
+      const { data: tersisip, error } = await db
+        .from('transaksi_bank')
+        .upsert(baris.slice(i, i + UKURAN_BATCH), { onConflict: 'sidik', ignoreDuplicates: true })
+        .select('id');
       if (error) throw error;
+      jumlahBaru += tersisip?.length ?? 0;
     }
+
+    const sudahAda = baris.length - jumlahBaru;
+    const status = jumlahBaru === 0 ? 'duplikat' : sudahAda > 0 ? 'sebagian' : 'selesai';
+
+    // Riwayatnya dilengkapi setelah penyisipan, karena hasilnya baru diketahui
+    // di sini. Kegagalan memperbarui riwayat tidak boleh menggagalkan impor
+    // yang transaksinya sudah tersimpan.
+    const { data: riwayat } = await db
+      .from('unggahan_rekening_koran')
+      .update({ jumlah_baru: jumlahBaru, jumlah_sudah_ada: sudahAda, status })
+      .eq('id', unggahan.id)
+      .select()
+      .maybeSingle();
 
     // Buffer dilepas di sini; berkas aslinya tidak pernah ditulis ke disk.
     res.status(201).json({
-      unggahan,
-      ringkasan,
+      unggahan: riwayat ?? unggahan,
+      ringkasan: { ...ringkasan, baru: jumlahBaru, sudah_ada: sudahAda },
       sheet: hasil.sheet,
+      periode: hasil.periode ?? null,
+      no_rekening: hasil.noRekening ?? null,
+      status,
       kolom_terdeteksi: Object.keys(hasil.peta),
       pernah_diunggah: sebelumnya?.[0] ?? null,
     });
   })
 );
+
+// --- Pemeriksaan periode sebelum impor --------------------------------------
+
+// Membaca berkas tanpa menyimpan apa pun, hanya untuk mengetahui periodenya.
+//
+// Ada dua alasan langkah ini berdiri sendiri. Pertama, berkas harus diproses
+// dari bulan terlama ke terbaru, sedangkan periodenya baru diketahui setelah
+// diurai — urutan pemakai memilih berkas tidak bisa dipercaya. Kedua, batas
+// dua belas bulan harus ditegakkan SEBELUM satu baris pun tersimpan; menolak
+// di tengah jalan akan meninggalkan sebagian bulan sudah masuk dan sebagian
+// belum.
+api.post(
+  '/periode',
+  express.raw({ type: () => true, limit: BATAS_UKURAN }),
+  jalur(async (req, res) => {
+    const buffer = req.body;
+    if (!Buffer.isBuffer(buffer) || buffer.length === 0) {
+      return res.status(400).json({ pesan: 'Tidak ada berkas yang diterima.' });
+    }
+
+    let namaBerkas = 'rekening-koran';
+    try {
+      namaBerkas = decodeURIComponent(req.get('X-Nama-Berkas') ?? '') || namaBerkas;
+    } catch {
+      // Header cacat bukan alasan menggagalkan pemeriksaan.
+    }
+
+    let hasil;
+    try {
+      hasil = await bacaRekeningKoran(buffer, namaBerkas);
+    } catch (error) {
+      if (error instanceof GalatFormat) return res.status(422).json({ pesan: error.message });
+      throw error;
+    }
+
+    res.json({
+      nama_berkas: namaBerkas,
+      periode: hasil.periode ?? null,
+      no_rekening: hasil.noRekening ?? null,
+      sheet: hasil.sheet,
+      jumlah_transaksi: hasil.transaksi.length,
+    });
+  })
+);
+
+// --- Periode yang datanya sudah ada di database -----------------------------
+
+api.get('/periode-tersimpan', jalur(async (_req, res) => {
+  const { data, error } = await db.rpc('periode_tersimpan');
+  if (error) throw error;
+  res.json({ data: data ?? [] });
+}));
 
 // --- Daftar transaksi + ringkasan ------------------------------------------
 
@@ -295,7 +377,9 @@ api.get('/unggahan', jalur(async (_req, res) => {
     .from('unggahan_rekening_koran')
     .select('*')
     .order('diunggah_pada', { ascending: false })
-    .limit(20);
+    // Satu batch impor bisa berisi dua belas bulan sekaligus; dua puluh baris
+    // akan langsung tertutup oleh satu kali impor saja.
+    .limit(60);
   if (error) throw error;
   res.json({ data });
 }));

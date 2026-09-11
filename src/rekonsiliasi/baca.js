@@ -109,9 +109,14 @@ export async function bacaRekeningKoran(buffer, namaBerkas = '') {
     const { bacaBarisPdf } = await import('./pdf.js');
     const { tabelDariBaris } = await import('./bca.js');
 
-    const { tabel, periode } = tabelDariBaris(await bacaBarisPdf(buffer));
+    const { tabel, periode, noRekening } = tabelDariBaris(await bacaBarisPdf(buffer));
     const hasil = uraiTabel(tabel, { berkasSumber: namaBerkas });
-    return { ...hasil, sheet: `BCA ${String(periode.bulan).padStart(2, '0')}/${periode.tahun}` };
+    return {
+      ...hasil,
+      sheet: `BCA ${String(periode.bulan).padStart(2, '0')}/${periode.tahun}`,
+      periode,
+      noRekening,
+    };
   }
 
   const sheets = await bukaBerkas(buffer, namaBerkas);

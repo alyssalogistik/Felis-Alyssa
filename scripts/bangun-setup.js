@@ -22,6 +22,7 @@ const urutan = [
   '0003_rekonsiliasi_bank.sql',
   '0004_audit_pemasok.sql',
   '0005_filter_tanggal_audit.sql',
+  '0006_sidik_transaksi.sql',
 ];
 
 // Komentar dibuang supaya yang harus disalin lewat layar sentuh sependek

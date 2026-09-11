@@ -245,15 +245,24 @@
     <div class="panel">
       <h3>Rekening Koran BCA</h3>
       <p class="keterangan-panel">
-        Menyimpan ke data transaksi bank yang sama dengan menu Rekonsiliasi Bank.
-        Rekening koran yang sudah diunggah di sana tidak perlu diunggah ulang.
+        Pilih beberapa PDF sekaligus, maksimal 12 file dan 12 bulan per import.
+        Urutan memilih tidak perlu diatur &mdash; sistem memproses dari bulan
+        paling lama. Menyimpan ke data transaksi yang sama dengan menu
+        Rekonsiliasi Bank.
       </p>
       <label class="unggah">
-        <input type="file" id="berkas-koran-audit" accept=".pdf,.xlsx,.csv" hidden>
+        <input type="file" id="berkas-koran-audit" accept=".pdf,.xlsx,.csv" multiple hidden>
         <span class="tombol tombol-blok">+ Upload Rekening Koran BCA</span>
       </label>
       <p id="status-koran-audit" class="status-unggah">Belum ada transaksi bank</p>
       <p id="pesan-koran-audit" class="pesan" hidden></p>
+
+      <div id="hasil-impor" class="hasil-impor" aria-live="polite"></div>
+
+      <details class="lipat lipat-dalam" id="lipat-riwayat">
+        <summary>Riwayat import</summary>
+        <div id="riwayat-impor"></div>
+      </details>
     </div>
 
     <form class="panel" id="cari-bayaran">
