@@ -50,25 +50,42 @@ if (kurang.length > 0) {
 // luar aplikasi dan obatnya satu langkah pasti. Pesan mentah PostgREST untuk
 // kasus ini ("Could not find the table ... in the schema cache") menyuruh
 // pembacanya menebak, jadi diterjemahkan menjadi instruksi.
-function tabelBelumDibuat(error) {
+//
+// Dibedakan antara tabel yang memang belum ada dan skema yang tertinggal satu
+// migration. Keduanya sama-sama disembuhkan oleh setup-lengkap.sql, tetapi
+// mengatakan "tabelnya belum dibuat" kepada pemilik database yang berisi
+// ribuan transaksi terbaca seperti datanya hilang.
+function skemaBelumSiap(error) {
   const kode = error?.code;
   const pesan = String(error?.message ?? '');
-  return (
-    kode === 'PGRST205' ||           // tidak ada di peta skema PostgREST
-    kode === '42P01' ||              // undefined_table dari PostgreSQL
-    /schema cache/i.test(pesan) ||
-    /relation ".*" does not exist/i.test(pesan)
-  );
+
+  if (kode === 'PGRST205' || kode === '42P01' ||
+      /relation ".*" does not exist/i.test(pesan)) {
+    return 'Database belum disiapkan: tabelnya belum dibuat.';
+  }
+
+  // Kolom atau fungsi yang belum ada: tabelnya sudah berisi, hanya skemanya
+  // yang tertinggal dari kode yang baru ter-deploy.
+  if (kode === 'PGRST204' || kode === '42703' || kode === '42883' ||
+      /schema cache/i.test(pesan) ||
+      /column .* does not exist/i.test(pesan) ||
+      /function .* does not exist/i.test(pesan)) {
+    return 'Database belum diperbarui: skemanya tertinggal dari versi aplikasi ' +
+           'yang sedang jalan. Data lama tetap utuh.';
+  }
+
+  return null;
 }
 
 app.use((error, _req, res, _next) => {
   console.error(error);
 
-  if (tabelBelumDibuat(error)) {
+  const sebab = skemaBelumSiap(error);
+  if (sebab) {
     return res.status(503).json({
       pesan:
-        'Database belum disiapkan: tabelnya belum dibuat. Jalankan isi berkas ' +
-        'supabase/setup-lengkap.sql sekali di Supabase SQL Editor, lalu muat ulang halaman ini.',
+        `${sebab} Jalankan isi berkas supabase/setup-lengkap.sql sekali di ` +
+        'Supabase SQL Editor, lalu muat ulang halaman ini.',
       rincian: error.message,
     });
   }

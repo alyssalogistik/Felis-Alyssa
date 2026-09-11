@@ -23,6 +23,7 @@ const urutan = [
   '0004_audit_pemasok.sql',
   '0005_filter_tanggal_audit.sql',
   '0006_sidik_transaksi.sql',
+  '0007_tampilan_tanpa_ganda.sql',
 ];
 
 // Komentar dibuang supaya yang harus disalin lewat layar sentuh sependek

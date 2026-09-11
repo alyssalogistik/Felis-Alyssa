@@ -201,6 +201,41 @@ sedikit pun. Yang telanjur ganda **tetap ada dan tetap terhitung** — pakai
 Fungsi itu hanya melaporkan transaksi serupa yang datang dari unggahan berbeda,
 karena kembar di dalam satu unggahan yang sama memang lazim.
 
+## Hasil rekonsiliasi dilipat saat ditampilkan
+
+Rekening koran yang sama pernah diunggah lebih dari sekali sebelum penjaga
+duplikat ada, sehingga satu transfer bisa tampil tiga kali dan ikut terhitung
+tiga kali pada "Total uang keluar". Yang diperbaiki adalah **tampilannya**,
+bukan datanya: `transaksi_bank` tetap utuh, tidak satu baris pun dihapus atau
+diubah.
+
+Seluruh pembacaan untuk layar, ekspor, dan laporan menembak view
+`transaksi_bank_unik` (`TABEL_TAMPIL` di `api.js`), sementara penyimpanan dan
+pembaruan status rekon tetap menembak tabel aslinya. `ringkasan_transaksi_bank()`
+ikut dialihkan ke view yang sama — kalau tidak, layar menampilkan dua transaksi
+sedangkan totalnya masih menjumlahkan enam baris, dan kekeliruannya hanya
+berpindah tempat alih-alih hilang.
+
+Yang disamakan: tanggal, keterangan setelah huruf dan spasinya diseragamkan,
+debit, kredit, dan referensi. **Nomor rekening sengaja tidak ikut** — baris lama
+belum menyimpannya sedangkan unggahan baru menyimpannya, sehingga transaksi yang
+sama dari dua masa justru akan tampak berbeda karena kolom itu.
+
+**Pelipatan berhenti di batas berkas.** Salinan hanya digabung bila datang dari
+unggahan yang berbeda; dua transaksi bernominal sama pada hari yang sama di
+dalam satu rekening koran tetap dua baris, karena BCA memang mencetak keduanya
+dan keduanya uang sungguhan. Di halaman ini kekurangan hitung lebih berbahaya
+daripada kelebihan: yang tampak kurang dibayar akan dibayar untuk kedua kalinya.
+
+Baris yang ditampilkan dari tiap kelompok bukan sekadar yang paling dulu masuk,
+melainkan yang paling mahal bila hilang: yang hasil auditnya sudah dikonfirmasi
+manusia, lalu yang punya kecocokan, lalu yang sudah direkonsiliasi. Tanpa urutan
+itu layar bisa menampilkan salinan berstatus "belum" padahal aslinya sudah
+direkon.
+
+Berkas di `supabase/audit/` memeriksa duplikat yang sudah telanjur masuk. Ketiganya
+hanya membaca dan tidak pernah dipanggil aplikasi.
+
 ## Halaman audit: pencarian dulu, pencocokan belakangan
 
 Pertanyaan yang benar-benar dijawab halaman ini adalah "supplier ini sudah saya
