@@ -549,6 +549,76 @@ as $fn$
   having count(distinct t.unggahan_id) > 1
   order by t.tanggal desc;
 $fn$;
+--
+--
+--
+--
+--
+create or replace view transaksi_bank_unik
+with (security_invoker = true) as
+with sidikkan as (
+  select
+    t.*,
+    md5(
+      coalesce((t.tanggal - date '1970-01-01')::text, '')                 || '|' ||
+      lower(regexp_replace(coalesce(t.keterangan, ''), '\s+', ' ', 'g'))  || '|' ||
+      coalesce(t.debit,  0)::text                                         || '|' ||
+      coalesce(t.kredit, 0)::text                                         || '|' ||
+      lower(coalesce(t.referensi, ''))
+    ) as sidik_tampil
+  from transaksi_bank t
+),
+bernomor as (
+  select s.*,
+         row_number() over (partition by s.unggahan_id, s.sidik_tampil
+                            order by s.dibuat_pada, s.id) as kembar_berkas
+  from sidikkan s
+)
+select distinct on (b.sidik_tampil, b.kembar_berkas)
+  b.id, b.unggahan_id, b.baris_sumber, b.berkas_sumber,
+  b.tanggal, b.tanggal_ambigu, b.keterangan,
+  b.debit, b.kredit, b.saldo, b.referensi,
+  b.status_data, b.masalah, b.duplikat,
+  b.status_rekon, b.referensi_rekon, b.catatan_rekon,
+  b.nominal_pembanding, b.selisih, b.direkon_pada, b.direkon_oleh,
+  b.dibuat_pada, b.bulan, b.tahun
+from bernomor b
+left join kecocokan k on k.transaksi_id = b.id
+order by
+  b.sidik_tampil, b.kembar_berkas,
+  coalesce(k.dikonfirmasi, false) desc,
+  (k.id is not null) desc,
+  (b.status_rekon <> 'belum') desc,
+  b.dibuat_pada, b.id;
+--
+--
+create or replace function ringkasan_transaksi_bank(
+  p_cari   text default null,
+  p_bulan  int  default null,
+  p_tahun  int  default null,
+  p_dari   date default null,
+  p_sampai date default null
+)
+returns table (jumlah bigint, debit numeric, kredit numeric, net numeric)
+language sql
+stable
+set search_path = public
+as $fn$
+  select
+    count(*),
+    coalesce(sum(t.debit), 0),
+    coalesce(sum(t.kredit), 0),
+    coalesce(sum(t.kredit), 0) - coalesce(sum(t.debit), 0)
+  from transaksi_bank_unik t
+  where (p_cari is null or p_cari = ''
+         or t.keterangan ilike '%' || p_cari || '%'
+         or coalesce(t.referensi, '') ilike '%' || p_cari || '%')
+    and (p_bulan  is null or t.bulan = p_bulan)
+    and (p_tahun  is null or t.tahun = p_tahun)
+    and (p_dari   is null or t.tanggal >= p_dari)
+    and (p_sampai is null or t.tanggal <= p_sampai);
+$fn$;
+grant select on transaksi_bank_unik to service_role;
 
 -- Setelah skema berubah, PostgREST masih memakai peta lama sampai diberi
 -- tahu. Tanpa ini tabel baru tetap dilaporkan "not found in the schema

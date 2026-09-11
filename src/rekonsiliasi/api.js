@@ -21,6 +21,20 @@ const UKURAN_BATCH = 500;
 /** Laporan cetak dibatasi supaya satu permintaan tidak menghasilkan PDF ribuan halaman. */
 const BATAS_CETAK = 5000;
 
+/**
+ * Sumber baca untuk layar, ekspor, dan laporan.
+ *
+ * View, bukan tabel. Rekening koran yang sama pernah diunggah lebih dari sekali
+ * sebelum penjaga duplikat ada, sehingga satu transfer bisa tampil dan
+ * terhitung berkali-kali. View melipat salinan yang datang dari unggahan
+ * BERBEDA saja — dua transaksi bernominal sama pada hari yang sama di dalam
+ * satu rekening koran tetap dua baris, karena keduanya uang sungguhan.
+ *
+ * Penulisan tidak pernah lewat sini: menyimpan dan memperbarui status rekon
+ * tetap menembak transaksi_bank langsung.
+ */
+const TABEL_TAMPIL = 'transaksi_bank_unik';
+
 const KOLOM_TRANSAKSI =
   'id, unggahan_id, baris_sumber, berkas_sumber, tanggal, tanggal_ambigu, keterangan, ' +
   'debit, kredit, saldo, referensi, status_data, masalah, duplikat, status_rekon, ' +
@@ -267,7 +281,7 @@ api.get('/transaksi', jalur(async (req, res) => {
   const mulai = Math.max(Number(req.query.mulai) || 0, 0);
 
   let query = db
-    .from('transaksi_bank')
+    .from(TABEL_TAMPIL)
     .select(KOLOM_TRANSAKSI, { count: 'exact' })
     .order('tanggal', { ascending: false, nullsFirst: false })
     .order('baris_sumber', { ascending: true })
@@ -393,7 +407,7 @@ api.get('/cetak', jalur(async (req, res) => {
   const kriteria = kriteriaDari(req.query);
 
   let query = db
-    .from('transaksi_bank')
+    .from(TABEL_TAMPIL)
     .select(KOLOM_TRANSAKSI)
     .order('tanggal', { ascending: true, nullsFirst: false })
     .order('baris_sumber', { ascending: true })
@@ -420,7 +434,7 @@ api.get('/ekspor', jalur(async (req, res) => {
 
   // Ekspor mengikuti filter yang sedang aktif, bukan seluruh rekening koran.
   let query = db
-    .from('transaksi_bank')
+    .from(TABEL_TAMPIL)
     .select(KOLOM_TRANSAKSI)
     .order('tanggal', { ascending: true, nullsFirst: false })
     .order('baris_sumber', { ascending: true })
