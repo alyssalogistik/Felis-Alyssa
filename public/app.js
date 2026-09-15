@@ -5,9 +5,10 @@ import {
   aman, ambil, el, kosong, pasangan, rupiah, tanggal, formatTanggalPolos,
 } from './bantuan.js';
 import { pasangKendaliRekonsiliasi, muatRekonsiliasi } from './rekonsiliasi.js';
-import { pasangKendaliAudit, muatAudit } from './audit.js';
+import { pasangKendaliAudit, muatAudit, muatStatusKoran } from './audit.js';
 import { pasangKendaliBayaran, cariBayaran, cariSupplier } from './bayaran.js';
 import { pasangKendaliSupplier, muatSupplier } from './supplier.js';
+import { pasangKendaliImpor } from './impor.js';
 
 const STATUS = {
   baru:       'Baru',
@@ -336,6 +337,14 @@ pasangKendaliRekonsiliasi();
 pasangKendaliAudit();
 pasangKendaliBayaran();
 pasangKendaliSupplier(cariSupplier);
+
+// Menghapus satu unggahan mengubah lebih dari daftarnya sendiri: jumlah
+// transaksi, daftar supplier, dan ringkasan rekonsiliasi semuanya ikut
+// bergeser. Disegarkan dari sini supaya layar tidak menampilkan angka lama
+// yang sudah tidak ada dasarnya di database.
+pasangKendaliImpor(async () => {
+  await Promise.all([muatSupplier(), muatRekonsiliasi(), muatStatusKoran()]);
+});
 
 window.addEventListener('hashchange', arahkan);
 arahkan();

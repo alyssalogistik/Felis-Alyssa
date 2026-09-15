@@ -11,6 +11,7 @@ import ExcelJS from 'exceljs';
 import { createAdminClient } from '../supabase.js';
 import { bacaRekeningKoran, BATAS_UKURAN } from './baca.js';
 import { GalatFormat, ringkasValidasi } from './parser.js';
+import { idUnggahanValid, periksaHapus, rincianHapus } from './hapus.js';
 import audit from './audit.js';
 
 const db = createAdminClient();
@@ -439,6 +440,102 @@ api.get('/unggahan', jalur(async (_req, res) => {
     .limit(60);
   if (error) throw error;
   res.json({ data });
+}));
+
+// --- Hapus satu unggahan ----------------------------------------------------
+
+/**
+ * Apa saja yang akan ikut terhapus bila satu unggahan dihapus.
+ *
+ * Jumlah transaksinya DIHITUNG ULANG dari tabel, bukan dibaca dari kolom
+ * `jumlah_transaksi`. Kolom itu mencatat berapa baris yang terbaca dari berkas,
+ * sedangkan yang benar-benar terhapus hanyalah baris yang unggahan ini miliki.
+ * Karena penyisipan memakai ON CONFLICT DO NOTHING, rekening koran yang sama
+ * diunggah dua kali menghasilkan unggahan kedua yang tidak memiliki satu baris
+ * pun — dan itulah yang paling sering ingin dihapus.
+ */
+async function dampakUnggahan(id) {
+  // Bentuknya diperiksa lebih dulu supaya id cacat dijawab "tidak ditemukan"
+  // alih-alih menjadi galat cast uuid dari Postgres yang bocor ke pemakainya.
+  if (!idUnggahanValid(id)) return null;
+
+  const { data: unggahan, error } = await db
+    .from('unggahan_rekening_koran')
+    .select('*')
+    .eq('id', id)
+    .maybeSingle();
+  if (error) throw error;
+  if (!unggahan) return null;
+
+  const hitung = async (bangun) => {
+    const { count, error: galat } = await bangun();
+    if (galat) throw galat;
+    return count ?? 0;
+  };
+
+  // Kecocokan dihitung lewat penyaringan pada relasi, bukan dengan menarik
+  // seluruh id transaksi ke aplikasi lebih dulu: satu unggahan bisa memuat
+  // ribuan baris, dan daftar id sepanjang itu tidak muat di satu URL.
+  const kecocokanUnggahan = () => db
+    .from('kecocokan')
+    .select('id, transaksi_bank!inner(unggahan_id)', { count: 'exact', head: true })
+    .eq('transaksi_bank.unggahan_id', id);
+
+  return {
+    unggahan,
+    transaksi: await hitung(() => db
+      .from('transaksi_bank')
+      .select('id', { count: 'exact', head: true })
+      .eq('unggahan_id', id)),
+    sudah_direkon: await hitung(() => db
+      .from('transaksi_bank')
+      .select('id', { count: 'exact', head: true })
+      .eq('unggahan_id', id)
+      .neq('status_rekon', 'belum')),
+    kecocokan: await hitung(kecocokanUnggahan),
+    kecocokan_dikonfirmasi: await hitung(() => kecocokanUnggahan().eq('dikonfirmasi', true)),
+  };
+}
+
+/** Hanya membaca. Dipakai kotak konfirmasi sebelum apa pun dihapus. */
+api.get('/unggahan/:id/dampak', jalur(async (req, res) => {
+  const dampak = await dampakUnggahan(req.params.id);
+  if (!dampak) return res.status(404).json({ pesan: 'Unggahan tidak ditemukan.' });
+  res.json({ ...dampak, rincian: rincianHapus(dampak) });
+}));
+
+api.delete('/unggahan/:id', jalur(async (req, res) => {
+  const dampak = await dampakUnggahan(req.params.id);
+  if (!dampak) return res.status(404).json({ pesan: 'Unggahan tidak ditemukan.' });
+
+  const izin = periksaHapus(dampak, {
+    konfirmasiKecocokan: req.query.konfirmasi_kecocokan === '1',
+  });
+  if (!izin.boleh) {
+    return res.status(409).json({
+      pesan: izin.pesan,
+      kode: izin.kode,
+      ...dampak,
+      rincian: rincianHapus(dampak),
+    });
+  }
+
+  // Satu perintah saja. Transaksi dan hasil auditnya ikut lewat rantai
+  // ON DELETE CASCADE yang sudah ada di skema, sehingga tidak mungkin berhenti
+  // di tengah dengan unggahan terhapus tetapi transaksinya tertinggal.
+  // Penyaringan hanya pada id unggahan ini: baris milik berkas lain tidak
+  // tersentuh sekalipun isinya identik.
+  const { error } = await db.from('unggahan_rekening_koran').delete().eq('id', req.params.id);
+  if (error) throw error;
+
+  res.json({
+    terhapus: {
+      nama_berkas: dampak.unggahan.nama_berkas,
+      transaksi: dampak.transaksi,
+      kecocokan: dampak.kecocokan,
+      kecocokan_dikonfirmasi: dampak.kecocokan_dikonfirmasi,
+    },
+  });
 }));
 
 // --- Cetak ------------------------------------------------------------------
