@@ -11,7 +11,7 @@ import ExcelJS from 'exceljs';
 import { createAdminClient } from '../supabase.js';
 import { bacaRekeningKoran, BATAS_UKURAN } from './baca.js';
 import { GalatFormat, ringkasValidasi } from './parser.js';
-import { periksaHapus, rincianHapus } from './hapus.js';
+import { idUnggahanValid, periksaHapus, rincianHapus } from './hapus.js';
 import audit from './audit.js';
 
 const db = createAdminClient();
@@ -455,6 +455,10 @@ api.get('/unggahan', jalur(async (_req, res) => {
  * pun — dan itulah yang paling sering ingin dihapus.
  */
 async function dampakUnggahan(id) {
+  // Bentuknya diperiksa lebih dulu supaya id cacat dijawab "tidak ditemukan"
+  // alih-alih menjadi galat cast uuid dari Postgres yang bocor ke pemakainya.
+  if (!idUnggahanValid(id)) return null;
+
   const { data: unggahan, error } = await db
     .from('unggahan_rekening_koran')
     .select('*')

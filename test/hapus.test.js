@@ -7,6 +7,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
+  idUnggahanValid,
   labelPeriode,
   periksaHapus,
   rincianHapus,
@@ -129,4 +130,27 @@ test('dengan persetujuan eksplisit, penghapusan diteruskan', () => {
 test('persetujuan tidak diminta bila memang tidak ada yang dikonfirmasi', () => {
   // Kalau setiap penghapusan menuntut centang, centangnya berhenti dibaca.
   assert.equal(periksaHapus(dampak({ kecocokan: 9 })).boleh, true);
+});
+
+// --- Bentuk id --------------------------------------------------------------
+
+test('id unggahan yang sah diterima', () => {
+  assert.equal(idUnggahanValid('11111111-1111-1111-1111-111111111111'), true);
+  assert.equal(idUnggahanValid('A1B2C3D4-e5f6-7890-ABCD-ef1234567890'), true);
+});
+
+test('id cacat ditolak sebelum menyentuh database', () => {
+  // Tanpa ini yang sampai ke pemakainya adalah galat cast uuid dari Postgres
+  // dengan status 500, seolah aplikasinya rusak.
+  for (const buruk of ['', ' ', 'abc', 'not-a-uuid', 'null', '*', 42, null, undefined, {}]) {
+    assert.equal(idUnggahanValid(buruk), false, `seharusnya ditolak: ${String(buruk)}`);
+  }
+});
+
+test('id yang ditempeli sintaks filter tidak dianggap sah', () => {
+  // Nilainya dikirim sebagai parameter terpisah sehingga tidak pernah
+  // melebarkan penyaring, tetapi bentuk seperti ini tetap bukan id.
+  assert.equal(idUnggahanValid('11111111-1111-1111-1111-111111111111.or(id.neq.null)'), false);
+  assert.equal(idUnggahanValid('11111111-1111-1111-1111-111111111111&select=*'), false);
+  assert.equal(idUnggahanValid('11111111-1111-1111-1111-111111111111 '), false);
 });

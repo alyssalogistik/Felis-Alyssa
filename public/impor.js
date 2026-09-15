@@ -159,6 +159,18 @@ export async function muatRiwayatImpor() {
 /** Unggahan yang sedang ditanyakan di kotak konfirmasi. */
 let dampakTerpilih = null;
 
+/**
+ * Menahan permintaan kedua selagi yang pertama belum selesai.
+ *
+ * Tombolnya memang dimatikan saat penghapusan berjalan, tetapi itu saja tidak
+ * cukup: menutup kotak dengan Escape di tengah jalan mengaktifkannya kembali,
+ * dan klik ganda cepat pada baris daftar sempat menembakkan dua permintaan
+ * sebelum kotaknya tergambar. Penghapusan kedua memang dijawab 404 dan tidak
+ * merusak apa pun, tetapi pemakainya melihat galat setelah penghapusan yang
+ * sebenarnya berhasil.
+ */
+let sedangMenghapus = false;
+
 function pesanRiwayat(kelas, teks) {
   const kotak = el('pesan-riwayat-impor');
   if (!kotak) return;
@@ -189,7 +201,7 @@ function gambarRincian(dampak) {
 
 async function bukaKonfirmasiHapus(id) {
   const modal = el('modal-hapus-unggahan');
-  if (!modal) return;
+  if (!modal || modal.open || sedangMenghapus) return;
 
   pesanRiwayat('', '');
   try {
@@ -204,7 +216,8 @@ async function bukaKonfirmasiHapus(id) {
 }
 
 async function jalankanHapus() {
-  if (!dampakTerpilih) return;
+  if (!dampakTerpilih || sedangMenghapus) return;
+  sedangMenghapus = true;
 
   const tombol = el('konfirmasi-hapus');
   const { id } = dampakTerpilih;
@@ -234,6 +247,7 @@ async function jalankanHapus() {
     el('pesan-modal-hapus').textContent = error.message;
     el('pesan-modal-hapus').hidden = false;
   } finally {
+    sedangMenghapus = false;
     tombol.textContent = 'Ya, hapus';
     tombol.disabled = Number(dampakTerpilih?.kecocokan_dikonfirmasi ?? 0) > 0
       && !el('setuju-hapus-kecocokan').checked;
@@ -265,6 +279,13 @@ export function pasangKendaliImpor(sesudah) {
 
   el('konfirmasi-hapus').addEventListener('click', jalankanHapus);
   el('batal-hapus').addEventListener('click', () => modal.close());
+
+  // Escape saat penghapusan sedang berjalan akan membuat kotaknya tertutup
+  // sebelum hasilnya diketahui, lalu tombolnya hidup lagi untuk unggahan yang
+  // sudah tidak ada.
+  modal.addEventListener('cancel', (peristiwa) => {
+    if (sedangMenghapus) peristiwa.preventDefault();
+  });
 
   modal.addEventListener('close', () => {
     dampakTerpilih = null;

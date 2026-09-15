@@ -18,6 +18,25 @@ const NAMA_BULAN = [
 /** Alasan penolakan yang bisa diperiksa mesin, bukan dicocokkan dari teksnya. */
 export const PERLU_KONFIRMASI_KECOCOKAN = 'perlu_konfirmasi_kecocokan';
 
+const POLA_UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/**
+ * Apakah teks ini berbentuk id unggahan.
+ *
+ * Diperiksa sebelum menyentuh database, bukan sesudahnya. Tanpa ini, id cacat
+ * diteruskan apa adanya lalu gagal di Postgres saat cast ke uuid — dan yang
+ * sampai ke pemakainya adalah galat mentah "invalid input syntax for type
+ * uuid" dengan status 500, seolah aplikasinya rusak.
+ *
+ * Ini bukan penjaga terhadap suntikan: nilai dikirim sebagai parameter
+ * terpisah, sehingga teks seperti `.or(id.neq.null)` ikut dibandingkan sebagai
+ * nilai dan tidak pernah melebarkan penyaringnya. Yang dijaga di sini adalah
+ * kejelasan jawabannya.
+ */
+export function idUnggahanValid(id) {
+  return typeof id === 'string' && POLA_UUID.test(id);
+}
+
 /**
  * "Februari 2026", atau "-" bila unggahannya dari sebelum kolom periode ada.
  *
