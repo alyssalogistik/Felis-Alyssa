@@ -137,7 +137,7 @@ async function muatStatusTagihan() {
  * Tanpa transaksi bank, seluruh tagihan akan dilaporkan belum ada transfernya —
  * benar secara data, tetapi menyesatkan sebagai kesimpulan audit.
  */
-async function muatStatusKoran() {
+export async function muatStatusKoran() {
   const kotak = el('status-koran-audit');
   if (!kotak) return;
   try {

@@ -11,6 +11,13 @@
 import { aman, ambil, el, kosong } from './bantuan.js';
 import { MAKS_BERKAS, namaPeriode, periksaBatch, ringkasBatch } from './batch.js';
 
+/**
+ * Dipanggil setelah satu unggahan dihapus, untuk menyegarkan tampilan lain
+ * yang ikut berubah: jumlah transaksi, daftar supplier, dan ringkasan rekon.
+ * Diisi app.js supaya modul ini tidak perlu mengimpor keempatnya.
+ */
+let sesudahBerubah = null;
+
 const LABEL_STATUS = {
   selesai: 'Tersimpan',
   sebagian: 'Sebagian sudah ada',
@@ -115,6 +122,7 @@ export async function muatRiwayatImpor() {
               <th class="angka-kolom">Duplikat</th>
               <th class="angka-kolom">Perlu Diperiksa</th>
               <th>Status</th>
+              <th><span class="hanya-pembaca-layar">Tindakan</span></th>
             </tr>
           </thead>
           <tbody>
@@ -128,6 +136,11 @@ export async function muatRiwayatImpor() {
                 <td class="angka-kolom">${Number(u.jumlah_sudah_ada ?? 0)}</td>
                 <td class="angka-kolom">${Number(u.jumlah_perlu_diperiksa ?? 0)}</td>
                 <td>${aman(LABEL_STATUS[u.status] ?? u.status ?? '-')}</td>
+                <td>
+                  <button type="button" class="tombol-hapus-unggahan" data-unggahan="${aman(u.id)}"
+                          title="Hapus unggahan ini"
+                          aria-label="Hapus unggahan ${aman(u.nama_berkas)}">Hapus</button>
+                </td>
               </tr>`).join('')}
           </tbody>
         </table>
@@ -135,6 +148,128 @@ export async function muatRiwayatImpor() {
   } catch (error) {
     kotak.innerHTML = kosong(error.message);
   }
+}
+
+// --- Hapus satu unggahan ----------------------------------------------------
+//
+// Dipakai untuk membuang berkas yang salah upload atau ter-upload dua kali.
+// Yang dihapus hanya unggahan itu beserta transaksi yang memang miliknya;
+// transaksi dari berkas lain tidak tersentuh sekalipun isinya identik.
+
+/** Unggahan yang sedang ditanyakan di kotak konfirmasi. */
+let dampakTerpilih = null;
+
+function pesanRiwayat(kelas, teks) {
+  const kotak = el('pesan-riwayat-impor');
+  if (!kotak) return;
+  kotak.className = `pesan ${kelas}`;
+  kotak.textContent = teks;
+  kotak.hidden = teks === '';
+}
+
+function gambarRincian(dampak) {
+  el('rincian-hapus').innerHTML = dampak.rincian
+    .map((r) => `
+      <div class="pasangan${r.berat ? ' pasangan-berat' : ''}">
+        <dt>${aman(r.label)}</dt><dd>${aman(r.nilai)}</dd>
+      </div>`)
+    .join('');
+
+  // Kecocokan yang sudah dikonfirmasi manusia tidak bisa dibuat ulang oleh
+  // audit otomatis. Persetujuannya diminta terpisah, dan tombolnya tetap mati
+  // sampai dicentang — server pun menolak tanpa centang itu.
+  const perluCentang = Number(dampak.kecocokan_dikonfirmasi ?? 0) > 0;
+  const blok = el('persetujuan-hapus');
+  const centang = el('setuju-hapus-kecocokan');
+  blok.hidden = !perluCentang;
+  centang.checked = false;
+  el('jumlah-kecocokan-dikonfirmasi').textContent = String(dampak.kecocokan_dikonfirmasi ?? 0);
+  el('konfirmasi-hapus').disabled = perluCentang;
+}
+
+async function bukaKonfirmasiHapus(id) {
+  const modal = el('modal-hapus-unggahan');
+  if (!modal) return;
+
+  pesanRiwayat('', '');
+  try {
+    dampakTerpilih = await ambil(`/rekonsiliasi/unggahan/${encodeURIComponent(id)}/dampak`);
+    dampakTerpilih.id = id;
+    gambarRincian(dampakTerpilih);
+    modal.showModal();
+  } catch (error) {
+    dampakTerpilih = null;
+    pesanRiwayat('gagal', error.message);
+  }
+}
+
+async function jalankanHapus() {
+  if (!dampakTerpilih) return;
+
+  const tombol = el('konfirmasi-hapus');
+  const { id } = dampakTerpilih;
+  const setuju = el('setuju-hapus-kecocokan').checked;
+
+  tombol.disabled = true;
+  tombol.textContent = 'Menghapus…';
+
+  try {
+    const { terhapus } = await ambil(
+      `/rekonsiliasi/unggahan/${encodeURIComponent(id)}${setuju ? '?konfirmasi_kecocokan=1' : ''}`,
+      { method: 'DELETE' }
+    );
+
+    el('modal-hapus-unggahan').close();
+    dampakTerpilih = null;
+
+    const catatan = [`${terhapus.transaksi} transaksi ikut terhapus`];
+    if (terhapus.kecocokan > 0) catatan.push(`${terhapus.kecocokan} hasil audit`);
+    pesanRiwayat('berhasil', `"${terhapus.nama_berkas}" dihapus. ${catatan.join(', ')}.`);
+
+    await muatRiwayatImpor();
+    if (typeof sesudahBerubah === 'function') await sesudahBerubah();
+  } catch (error) {
+    // Kotaknya sengaja dibiarkan terbuka: pesannya menerangkan apa yang harus
+    // dilakukan, dan menutupnya akan membuat sebabnya hilang dari layar.
+    el('pesan-modal-hapus').textContent = error.message;
+    el('pesan-modal-hapus').hidden = false;
+  } finally {
+    tombol.textContent = 'Ya, hapus';
+    tombol.disabled = Number(dampakTerpilih?.kecocokan_dikonfirmasi ?? 0) > 0
+      && !el('setuju-hapus-kecocokan').checked;
+  }
+}
+
+/**
+ * @param {() => Promise<void>} [sesudah]
+ *   Dijalankan setelah satu unggahan terhapus, untuk menyegarkan jumlah
+ *   transaksi, daftar supplier, dan ringkasan rekonsiliasi.
+ */
+export function pasangKendaliImpor(sesudah) {
+  sesudahBerubah = sesudah ?? null;
+
+  const daftar = el('riwayat-impor');
+  if (daftar) {
+    daftar.addEventListener('click', (peristiwa) => {
+      const tombol = peristiwa.target.closest('.tombol-hapus-unggahan');
+      if (tombol) bukaKonfirmasiHapus(tombol.dataset.unggahan);
+    });
+  }
+
+  const modal = el('modal-hapus-unggahan');
+  if (!modal) return;
+
+  el('setuju-hapus-kecocokan').addEventListener('change', (peristiwa) => {
+    el('konfirmasi-hapus').disabled = !peristiwa.target.checked;
+  });
+
+  el('konfirmasi-hapus').addEventListener('click', jalankanHapus);
+  el('batal-hapus').addEventListener('click', () => modal.close());
+
+  modal.addEventListener('close', () => {
+    dampakTerpilih = null;
+    el('pesan-modal-hapus').hidden = true;
+  });
 }
 
 /**

@@ -261,6 +261,7 @@
 
       <details class="lipat lipat-dalam" id="lipat-riwayat">
         <summary>Riwayat import</summary>
+        <p id="pesan-riwayat-impor" class="pesan" hidden></p>
         <div id="riwayat-impor"></div>
       </details>
     </div>
@@ -445,6 +446,32 @@
   <dialog id="modal-audit">
     <div id="isi-modal-audit"></div>
     <button type="button" id="tutup-audit" class="tombol-lembut">Tutup</button>
+  </dialog>
+
+  <dialog id="modal-hapus-unggahan">
+    <h3>Hapus unggahan rekening koran?</h3>
+    <p class="keterangan-panel">
+      Yang dihapus hanya unggahan ini beserta transaksi yang berasal darinya.
+      Transaksi dari berkas lain tidak ikut terhapus, walaupun isinya sama.
+    </p>
+
+    <dl id="rincian-hapus" class="pasangan-daftar"></dl>
+
+    <div id="persetujuan-hapus" class="peringatan-hapus" hidden>
+      <label>
+        <input type="checkbox" id="setuju-hapus-kecocokan">
+        Saya mengerti <strong><span id="jumlah-kecocokan-dikonfirmasi">0</span> kecocokan audit
+        yang sudah dikonfirmasi</strong> akan ikut terhapus dan tidak bisa dipulihkan
+        oleh audit otomatis.
+      </label>
+    </div>
+
+    <p id="pesan-modal-hapus" class="pesan gagal" hidden></p>
+
+    <div class="aksi-modal">
+      <button type="button" id="batal-hapus" class="tombol-lembut">Batal</button>
+      <button type="button" id="konfirmasi-hapus" class="tombol tombol-bahaya">Ya, hapus</button>
+    </div>
   </dialog>
 
 </main>
