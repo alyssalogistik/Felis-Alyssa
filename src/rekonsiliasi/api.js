@@ -12,6 +12,8 @@ import { createAdminClient } from '../supabase.js';
 import { bacaRekeningKoran, BATAS_UKURAN } from './baca.js';
 import { GalatFormat, ringkasValidasi } from './parser.js';
 import { idUnggahanValid, periksaHapus, rincianHapus } from './hapus.js';
+import { saringPembayaran, saringPerubahan } from './pembayaran.js';
+import { cariKembar, peringatanSumber, perluKonfirmasi } from './kembar-bayar.js';
 import audit from './audit.js';
 
 const db = createAdminClient();
@@ -40,6 +42,33 @@ const KOLOM_TRANSAKSI =
   'id, unggahan_id, baris_sumber, berkas_sumber, tanggal, tanggal_ambigu, keterangan, ' +
   'debit, kredit, saldo, referensi, status_data, masalah, duplikat, status_rekon, ' +
   'referensi_rekon, catatan_rekon, nominal_pembanding, selisih, direkon_pada, direkon_oleh';
+
+/**
+ * Tampilan gabungan: rekening koran ditambah pembayaran manual.
+ *
+ * View, bukan penggabungan di aplikasi. Halaman audit menarik hasilnya
+ * berhalaman-halaman dengan range() dan count exact; dua sumber yang digabung
+ * di peramban tidak bisa digeser terpisah lalu menghasilkan urutan tanggal
+ * yang benar, dan auditor yang melihat sebagian daftar akan menyimpulkan
+ * supplier kurang dibayar.
+ */
+const TABEL_GABUNGAN = 'pembayaran_semua';
+const KOLOM_GABUNGAN = `asal, sumber, memo, bukti_url, dibuat_oleh, ${KOLOM_TRANSAKSI}`;
+
+/**
+ * Sumber baca untuk satu permintaan.
+ *
+ * Bawaannya rekening koran saja. Halaman Rekonsiliasi Bank memakai endpoint
+ * yang sama dan tidak boleh ikut menampilkan pembayaran manual: di sana yang
+ * dikerjakan adalah mencocokkan baris e-statement, dan baris Mekari Pay tidak
+ * punya baris bank untuk dicocokkan.
+ */
+function sumberBaca(query) {
+  const gabungan = query.termasuk_manual === '1' || query.termasuk_manual === 'true';
+  return gabungan
+    ? { tabel: TABEL_GABUNGAN, kolom: KOLOM_GABUNGAN, gabungan: true }
+    : { tabel: TABEL_TAMPIL, kolom: KOLOM_TRANSAKSI, gabungan: false };
+}
 
 function jalur(handler) {
   return (req, res, next) => handler(req, res).catch(next);
@@ -299,8 +328,11 @@ api.get('/supplier', jalur(async (_req, res) => {
   let lengkap = true;
 
   for (let mulai = 0; mulai < BATAS_PINDAI; mulai += UKURAN_PINDAI) {
+    // Membaca tampilan gabungan, bukan rekening koran saja: supplier yang
+    // dibayar hanya lewat Mekari Pay tidak punya satu pun baris di e-statement
+    // dan tidak akan pernah muncul di daftar kalau sumbernya dibatasi ke bank.
     const { data, error } = await db
-      .from(TABEL_TAMPIL)
+      .from(TABEL_GABUNGAN)
       .select('keterangan, debit, tanggal, kredit')
       .gt('debit', 0)
       .order('tanggal', { ascending: false, nullsFirst: false })
@@ -321,14 +353,15 @@ api.get('/supplier', jalur(async (_req, res) => {
 
 api.get('/transaksi', jalur(async (req, res) => {
   const kriteria = kriteriaDari(req.query);
+  const sumber = sumberBaca(req.query);
   const batas = Math.min(Math.max(Number(req.query.batas) || 50, 1), 200);
   const mulai = Math.max(Number(req.query.mulai) || 0, 0);
 
   let query = db
-    .from(TABEL_TAMPIL)
-    .select(KOLOM_TRANSAKSI, { count: 'exact' })
+    .from(sumber.tabel)
+    .select(sumber.kolom, { count: 'exact' })
     .order('tanggal', { ascending: false, nullsFirst: false })
-    .order('baris_sumber', { ascending: true })
+    .order('baris_sumber', { ascending: true, nullsFirst: false })
     .range(mulai, mulai + batas - 1);
 
   const { data, count, error } = await terapkanKriteria(query, kriteria);
@@ -352,14 +385,49 @@ api.get('/transaksi', jalur(async (req, res) => {
   });
   if (galatRingkasan) throw galatRingkasan;
 
+  // Rincian per sumber hanya diambil saat tampilannya memang gabungan.
+  // Fungsinya terpisah dari ringkasan_transaksi_bank(), bukan parameter
+  // tambahan padanya: menambah parameter ke fungsi yang sudah ada membuat
+  // versi lama dan baru berdampingan, lalu pemanggilan lama gagal dengan
+  // "Could not choose a best candidate function".
+  let ringkasanSumber = null;
+  if (sumber.gabungan) {
+    const { data: perSumber, error: galatSumber } = await db.rpc('ringkasan_pembayaran', {
+      p_cari: kriteria.cari || null,
+      p_bulan: kriteria.bulan,
+      p_tahun: kriteria.tahun,
+      p_dari: kriteria.dari,
+      p_sampai: kriteria.sampai,
+      p_hanya_debit: kriteria.hanya_debit,
+    });
+    if (galatSumber) throw galatSumber;
+    ringkasanSumber = perSumber ?? [];
+  }
+
   res.json({
     data,
     total: count ?? 0,
     batas,
     mulai,
-    ringkasan: ringkasan?.[0] ?? { jumlah: 0, debit: 0, kredit: 0, net: 0 },
+    ringkasan: sumber.gabungan
+      ? ringkasanGabungan(ringkasanSumber)
+      : ringkasan?.[0] ?? { jumlah: 0, debit: 0, kredit: 0, net: 0 },
+    ringkasan_sumber: ringkasanSumber,
   });
 }));
+
+/** Menjumlahkan rincian per sumber menjadi satu ringkasan berbentuk lama. */
+function ringkasanGabungan(perSumber) {
+  const total = (perSumber ?? []).reduce(
+    (a, k) => ({
+      jumlah: a.jumlah + Number(k.jumlah ?? 0),
+      debit: a.debit + Number(k.debit ?? 0),
+      kredit: a.kredit + Number(k.kredit ?? 0),
+    }),
+    { jumlah: 0, debit: 0, kredit: 0 }
+  );
+  return { ...total, net: total.kredit - total.debit };
+}
 
 api.get('/transaksi/:id', jalur(async (req, res) => {
   const { data, error } = await db
@@ -546,11 +614,13 @@ api.delete('/unggahan/:id', jalur(async (req, res) => {
 api.get('/cetak', jalur(async (req, res) => {
   const kriteria = kriteriaDari(req.query);
 
+  const sumber = sumberBaca(req.query);
+
   let query = db
-    .from(TABEL_TAMPIL)
-    .select(KOLOM_TRANSAKSI)
+    .from(sumber.tabel)
+    .select(sumber.kolom)
     .order('tanggal', { ascending: true, nullsFirst: false })
-    .order('baris_sumber', { ascending: true })
+    .order('baris_sumber', { ascending: true, nullsFirst: false })
     .limit(BATAS_CETAK);
 
   const { data, error } = await terapkanKriteria(query, kriteria);
@@ -572,12 +642,14 @@ api.get('/cetak', jalur(async (req, res) => {
 api.get('/ekspor', jalur(async (req, res) => {
   const kriteria = kriteriaDari(req.query);
 
+  const sumber = sumberBaca(req.query);
+
   // Ekspor mengikuti filter yang sedang aktif, bukan seluruh rekening koran.
   let query = db
-    .from(TABEL_TAMPIL)
-    .select(KOLOM_TRANSAKSI)
+    .from(sumber.tabel)
+    .select(sumber.kolom)
     .order('tanggal', { ascending: true, nullsFirst: false })
-    .order('baris_sumber', { ascending: true })
+    .order('baris_sumber', { ascending: true, nullsFirst: false })
     .limit(20000);
 
   const { data, error } = await terapkanKriteria(query, kriteria);
@@ -588,6 +660,9 @@ api.get('/ekspor', jalur(async (req, res) => {
 
   sheet.columns = [
     { header: 'Tanggal',      key: 'tanggal',      width: 12 },
+    // Sumbernya wajib ikut supaya pembayaran manual di berkas ekspor tidak
+    // terbaca seolah baris rekening koran.
+    { header: 'Sumber',       key: 'sumber',       width: 14 },
     { header: 'Keterangan',   key: 'keterangan',   width: 46 },
     { header: 'Debit',        key: 'debit',        width: 16 },
     { header: 'Kredit',       key: 'kredit',       width: 16 },
@@ -606,10 +681,11 @@ api.get('/ekspor', jalur(async (req, res) => {
   sheet.views = [{ state: 'frozen', ySplit: 1 }];
 
   for (const t of data) {
-    sheet.addRow({ ...t, debit: Number(t.debit), kredit: Number(t.kredit) });
+    sheet.addRow({ ...t, sumber: t.sumber ?? 'BCA', debit: Number(t.debit), kredit: Number(t.kredit) });
   }
   // Format ribuan Indonesia; nilainya tetap angka sungguhan agar bisa dijumlah.
-  for (const kolom of ['C', 'D', 'E', 'I', 'J']) {
+  // Hurufnya bergeser satu sejak kolom Sumber disisipkan di posisi kedua.
+  for (const kolom of ['D', 'E', 'F', 'J', 'K']) {
     sheet.getColumn(kolom).numFmt = '#,##0.00';
   }
 
@@ -621,6 +697,177 @@ api.get('/ekspor', jalur(async (req, res) => {
   res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
   res.setHeader('Content-Disposition', `attachment; filename="${bagian.join('-').toLowerCase()}.xlsx"`);
   res.send(Buffer.from(await buku.xlsx.writeBuffer()));
+}));
+
+// --- Pembayaran manual ------------------------------------------------------
+//
+// Uang keluar yang tidak lewat rekening koran: Mekari Pay, kas, bank lain.
+// Disimpan di tabelnya sendiri; transaksi_bank tidak pernah disentuh dari sini.
+
+const KOLOM_BAYAR =
+  'id, tanggal, penerima, nominal, sumber, no_referensi, memo, bukti_url, ' +
+  'dibuat_pada, dibuat_oleh, diubah_pada, diubah_oleh';
+
+/** Baris pembanding untuk penjaga double count: rekening koran DAN manual. */
+async function barisPembanding({ tanggal, penerima }) {
+  // Disaring ke jendela waktu di sekitar tanggalnya saja. Menarik seluruh
+  // rekening koran bertahun-tahun untuk memeriksa satu pembayaran akan membuat
+  // formulirnya menggantung, dan kandidat di luar jendela itu memang tidak
+  // pernah dianggap kembar kecuali nomor referensinya sama.
+  const geser = (hari) => {
+    const t = new Date(`${tanggal}T00:00:00Z`);
+    t.setUTCDate(t.getUTCDate() + hari);
+    return t.toISOString().slice(0, 10);
+  };
+
+  const { data: dekat, error } = await db
+    .from(TABEL_GABUNGAN)
+    .select('id, asal, sumber, tanggal, keterangan, debit, kredit, referensi')
+    .gte('tanggal', geser(-7))
+    .lte('tanggal', geser(7))
+    .gt('debit', 0)
+    .limit(2000);
+  if (error) throw error;
+
+  // Nomor referensi menembus jendela waktu: satu invoice yang dibayar dua kali
+  // berbulan-bulan berjarak adalah pola double count yang paling mahal.
+  const kata = String(penerima ?? '').trim();
+  if (kata === '') return dekat ?? [];
+
+  const { data: senama, error: galatNama } = await db
+    .from(TABEL_GABUNGAN)
+    .select('id, asal, sumber, tanggal, keterangan, debit, kredit, referensi')
+    .ilike('keterangan', `%${kata}%`)
+    .gt('debit', 0)
+    .limit(2000);
+  if (galatNama) throw galatNama;
+
+  const gabung = new Map();
+  for (const b of [...(dekat ?? []), ...(senama ?? [])]) gabung.set(b.id, b);
+  return [...gabung.values()];
+}
+
+/** Hanya memeriksa. Dipakai formulir sebelum apa pun tersimpan. */
+api.post('/pembayaran/periksa', jalur(async (req, res) => {
+  const hasil = saringPembayaran(req.body ?? {});
+  if (!hasil.ok) return res.status(422).json({ pesan: hasil.masalah.join(' '), masalah: hasil.masalah });
+
+  const kandidat = cariKembar(hasil.nilai, await barisPembanding(hasil.nilai), {
+    abaikanId: req.body?.abaikan_id,
+  });
+
+  res.json({
+    kandidat,
+    peringatan: peringatanSumber(hasil.nilai.sumber),
+    perlu_konfirmasi: perluKonfirmasi(kandidat, hasil.nilai.sumber),
+  });
+}));
+
+api.get('/pembayaran', jalur(async (req, res) => {
+  const batas = Math.min(Math.max(Number(req.query.batas) || 100, 1), 500);
+  const { data, count, error } = await db
+    .from('pembayaran_manual')
+    .select(KOLOM_BAYAR, { count: 'exact' })
+    .order('tanggal', { ascending: false })
+    .order('dibuat_pada', { ascending: false })
+    .range(0, batas - 1);
+  if (error) throw error;
+  res.json({ data, total: count ?? 0 });
+}));
+
+api.get('/pembayaran/:id/riwayat', jalur(async (req, res) => {
+  if (!idUnggahanValid(req.params.id)) return res.status(404).json({ pesan: 'Pembayaran tidak ditemukan.' });
+  const { data, error } = await db
+    .from('pembayaran_manual_riwayat')
+    .select('id, aksi, data_lama, data_baru, oleh, pada')
+    .eq('pembayaran_id', req.params.id)
+    .order('pada', { ascending: false });
+  if (error) throw error;
+  res.json({ data });
+}));
+
+api.post('/pembayaran', jalur(async (req, res) => {
+  const hasil = saringPembayaran(req.body ?? {});
+  if (!hasil.ok) return res.status(422).json({ pesan: hasil.masalah.join(' '), masalah: hasil.masalah });
+
+  const kandidat = cariKembar(hasil.nilai, await barisPembanding(hasil.nilai));
+  const peringatan = peringatanSumber(hasil.nilai.sumber);
+  const disetujui = req.query.konfirmasi_kembar === '1';
+
+  // Memperingatkan, bukan memblokir: transfer BCA dan pembayaran Mekari Pay
+  // pada hari yang sama dengan nominal sama bisa benar-benar dua pembayaran
+  // berbeda, dan menolaknya otomatis membuat uang yang sungguhan keluar hilang
+  // dari catatan. Yang diputuskan mesin hanya "ini perlu dilihat orang".
+  if (perluKonfirmasi(kandidat, hasil.nilai.sumber) && !disetujui) {
+    return res.status(409).json({
+      pesan: 'Ada kemungkinan pembayaran ini sudah tercatat. Periksa dulu sebelum melanjutkan.',
+      kode: 'perlu_konfirmasi_kembar',
+      kandidat,
+      peringatan,
+    });
+  }
+
+  const { data, error } = await db
+    .from('pembayaran_manual')
+    .insert(hasil.nilai)
+    .select(KOLOM_BAYAR)
+    .single();
+  if (error) throw error;
+
+  res.status(201).json({ data, kandidat, peringatan });
+}));
+
+api.patch('/pembayaran/:id', jalur(async (req, res) => {
+  if (!idUnggahanValid(req.params.id)) return res.status(404).json({ pesan: 'Pembayaran tidak ditemukan.' });
+
+  const hasil = saringPerubahan(req.body ?? {});
+  if (!hasil.ok) return res.status(422).json({ pesan: hasil.masalah.join(' '), masalah: hasil.masalah });
+
+  // Barisnya sendiri dikecualikan dari pemeriksaan kembar; kalau tidak, setiap
+  // penyuntingan akan melaporkan dirinya sendiri sebagai duplikat.
+  const kandidat = cariKembar(
+    { ...hasil.nilai, penerima: hasil.nilai.penerima },
+    await barisPembanding(hasil.nilai),
+    { abaikanId: req.params.id }
+  );
+  if (perluKonfirmasi(kandidat, hasil.nilai.sumber) && req.query.konfirmasi_kembar !== '1') {
+    return res.status(409).json({
+      pesan: 'Ada kemungkinan pembayaran ini sudah tercatat. Periksa dulu sebelum melanjutkan.',
+      kode: 'perlu_konfirmasi_kembar',
+      kandidat,
+      peringatan: peringatanSumber(hasil.nilai.sumber),
+    });
+  }
+
+  const { data, error } = await db
+    .from('pembayaran_manual')
+    .update(hasil.nilai)
+    .eq('id', req.params.id)
+    .select(KOLOM_BAYAR)
+    .maybeSingle();
+  if (error) throw error;
+  if (!data) return res.status(404).json({ pesan: 'Pembayaran tidak ditemukan.' });
+
+  res.json({ data });
+}));
+
+api.delete('/pembayaran/:id', jalur(async (req, res) => {
+  if (!idUnggahanValid(req.params.id)) return res.status(404).json({ pesan: 'Pembayaran tidak ditemukan.' });
+
+  const oleh = String(req.query.oleh ?? '').trim();
+  if (oleh === '') return res.status(422).json({ pesan: 'Kolom "Dihapus oleh" harus diisi.' });
+
+  // Lewat fungsi database, bukan delete langsung: hanya di sana nama
+  // penghapusnya bisa sampai ke trigger jejak perubahan. Baris yang dihapus
+  // tidak menyisakan kolom untuk menuliskannya.
+  const { data, error } = await db.rpc('hapus_pembayaran_manual', {
+    p_id: req.params.id,
+    p_oleh: oleh,
+  });
+  if (error) throw error;
+  if (!data) return res.status(404).json({ pesan: 'Pembayaran tidak ditemukan.' });
+
+  res.json({ terhapus: data });
 }));
 
 api.use('/audit', audit);

@@ -56,7 +56,9 @@ test('kop memuat seluruh keterangan filter dan hasilnya', async () => {
   const [halaman] = await bacaBalik(await buatPdfLaporan(CONTOH, KRITERIA));
   for (const label of [
     'Kata Kunci', 'Bulan', 'Tahun', 'Dari Tanggal', 'Sampai Tanggal',
-    'Tanggal Cetak', 'Jumlah Transaksi', 'Total Uang Keluar', 'Total Uang Masuk',
+    // Satu total gabungan diganti total per sumber: pembaca laporan harus bisa
+    // melihat mana yang dari rekening koran dan mana yang diketik manual.
+    'Tanggal Cetak', 'Jumlah Transaksi', 'Total BCA', 'TOTAL PEMBAYARAN', 'Total Uang Masuk',
   ]) {
     assert.match(halaman.teks, new RegExp(label), `${label} tidak tercetak`);
   }
@@ -153,4 +155,55 @@ test('transaksi tanpa tanggal tidak menggagalkan laporan', async () => {
     [{ tanggal: null, keterangan: 'BARIS RUSAK', debit: 0, kredit: 0, referensi: null }], {}
   ));
   assert.match(halaman[0].teks, /BARIS RUSAK/);
+});
+
+// --- Kolom sumber dan total per sumber --------------------------------------
+
+test('setiap baris mencantumkan sumbernya', async () => {
+  const [halaman] = await bacaBalik(await buatPdfLaporan([
+    { asal: 'bank', sumber: 'BCA', tanggal: '2025-05-06', keterangan: 'TRSF SUGENG RIYANTO', debit: 8800000, kredit: 0, referensi: null },
+    { asal: 'manual', sumber: 'MEKARI PAY', tanggal: '2025-01-06', keterangan: 'SUGENG RIYANTO', debit: 28000000, kredit: 0, referensi: 'INV/AAL/10/I/2025' },
+  ], {}));
+
+  assert.match(halaman.teks, /SUMBER/, 'kolomnya ada di kepala tabel');
+  assert.match(halaman.teks, /MEKARI PAY/, 'pembayaran manual tidak boleh terbaca seolah dari BCA');
+  assert.match(halaman.teks, /BCA/);
+});
+
+test('KAIDAH: nomor invoice panjang tidak terpotong di kolom REFERENSI', async () => {
+  // REFERENSI pernah hilang seluruhnya karena kolomnya lebih sempit dari
+  // judulnya sendiri. Nomor invoice manual jauh lebih panjang dari referensi
+  // bank, jadi lebarnya diukur ulang saat kolom SUMBER ditambahkan.
+  const [halaman] = await bacaBalik(await buatPdfLaporan([
+    { asal: 'manual', sumber: 'MEKARI PAY', tanggal: '2025-01-06', keterangan: 'SUGENG RIYANTO', debit: 28000000, kredit: 0, referensi: 'INV/AAL/10/I/2025' },
+  ], {}));
+  assert.match(halaman.teks, /INV\/AAL\/10\/I\/2025/);
+});
+
+test('KAIDAH: TOTAL PEMBAYARAN sama dengan penjumlahan baris di laporan', async () => {
+  // Bukan diambil dari ringkasan yang dihitung terpisah. Total yang tidak sama
+  // dengan penjumlahan baris di bawahnya menghancurkan kepercayaan pada
+  // seluruh laporan.
+  const [halaman] = await bacaBalik(await buatPdfLaporan([
+    { asal: 'bank', sumber: 'BCA', tanggal: '2025-05-06', keterangan: 'TRSF SUGENG RIYANTO', debit: 8800000, kredit: 0, referensi: null },
+    { asal: 'manual', sumber: 'MEKARI PAY', tanggal: '2025-01-06', keterangan: 'SUGENG RIYANTO', debit: 28000000, kredit: 0, referensi: null },
+    { asal: 'manual', sumber: 'MEKARI PAY', tanggal: '2025-01-17', keterangan: 'SUGENG RIYANTO', debit: 28000000, kredit: 0, referensi: null },
+    { asal: 'manual', sumber: 'KAS', tanggal: '2025-02-03', keterangan: 'SUGENG RIYANTO', debit: 1500000, kredit: 0, referensi: null },
+  ], {}));
+
+  assert.match(halaman.teks, /Total BCA Rp 8\.800\.000/);
+  assert.match(halaman.teks, /Total MEKARI PAY Rp 56\.000\.000/);
+  assert.match(halaman.teks, /Total MANUAL LAINNYA Rp 1\.500\.000/);
+  // 8.800.000 + 56.000.000 + 1.500.000
+  assert.match(halaman.teks, /TOTAL PEMBAYARAN Rp 66\.300\.000/);
+});
+
+test('kelompok yang kosong tidak dicetak sebagai Rp 0', async () => {
+  // Baris "Total Mekari Pay: Rp 0" pada laporan yang memang tidak memuat
+  // Mekari Pay hanya menambah keraguan.
+  const [halaman] = await bacaBalik(await buatPdfLaporan([
+    { asal: 'bank', sumber: 'BCA', tanggal: '2025-05-06', keterangan: 'TRSF SUGENG', debit: 8800000, kredit: 0, referensi: null },
+  ], {}));
+  assert.doesNotMatch(halaman.teks, /Total MEKARI PAY/);
+  assert.doesNotMatch(halaman.teks, /Total MANUAL LAINNYA/);
 });

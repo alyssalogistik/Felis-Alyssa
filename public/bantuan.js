@@ -27,7 +27,17 @@ export async function ambil(jalur, opsi) {
     ...opsi,
   });
   const isi = await respons.json().catch(() => ({}));
-  if (!respons.ok) throw new Error(isi.pesan ?? `Gagal memuat (HTTP ${respons.status}).`);
+  if (!respons.ok) {
+    // Badan responsnya ikut dilampirkan, bukan dibuang. Penolakan yang bisa
+    // ditindaklanjuti — kandidat duplikat, rincian dampak — mengirim datanya
+    // bersama pesan, dan pemanggil butuh keduanya untuk menawarkan jalan
+    // keluar alih-alih sekadar menampilkan kalimat galat.
+    const galat = new Error(isi.pesan ?? `Gagal memuat (HTTP ${respons.status}).`);
+    galat.status = respons.status;
+    galat.kode = isi.kode;
+    galat.isi = isi;
+    throw galat;
+  }
   return isi;
 }
 

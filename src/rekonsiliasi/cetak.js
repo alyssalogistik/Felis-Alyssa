@@ -8,7 +8,10 @@
 // garis tipis, rapat. Tema gelap aplikasi tidak ikut tercetak.
 
 import PDFDocument from 'pdfkit';
-import { A4, MARGIN, KOLOM, rupiah, tanggalPendek, keteranganFilter, susunHalaman, totalkan } from './laporan.js';
+import {
+  A4, MARGIN, KOLOM, rupiah, tanggalPendek, keteranganFilter, susunHalaman,
+  totalkan, totalkanPerSumber,
+} from './laporan.js';
 
 const FONT = 'Helvetica';
 const FONT_TEBAL = 'Helvetica-Bold';
@@ -24,7 +27,7 @@ const GARIS_TIPIS = '#cccccc';
 
 const LEBAR_ISI = A4.lebar - MARGIN * 2;
 
-function kepalaDokumen(dok, kriteria, ringkasan, dicetakPada) {
+function kepalaDokumen(dok, kriteria, ringkasan, perSumber, dicetakPada) {
   let y = MARGIN;
 
   dok.font(FONT_TEBAL).fontSize(12).fillColor('#000000')
@@ -42,10 +45,18 @@ function kepalaDokumen(dok, kriteria, ringkasan, dicetakPada) {
   // sekaligus — atas dasar apa disaring, dan berapa yang ketemu.
   const kolomKanan = MARGIN + LEBAR_ISI / 2 + 10;
   const kiri = keteranganFilter(kriteria);
+  // Total dipecah per sumber supaya angka gabungannya tetap bisa diaudit:
+  // pembaca laporan harus bisa melihat mana yang berasal dari rekening koran
+  // dan mana yang diketik manual, bukan hanya satu angka yang tidak bisa
+  // ditelusuri kembali.
   const kanan = [
     ['Tanggal Cetak', dicetakPada],
     ['Jumlah Transaksi', `${ringkasan.jumlah} transaksi`],
-    ['Total Uang Keluar', rupiah(ringkasan.debit)],
+    ...perSumber.per_sumber.map((k) => [
+      `Total ${k.kelompok === 'BCA' ? 'BCA' : k.kelompok}`,
+      `${rupiah(k.debit)}  (${k.jumlah})`,
+    ]),
+    ['TOTAL PEMBAYARAN', rupiah(perSumber.total)],
     ['Total Uang Masuk', rupiah(ringkasan.kredit)],
   ];
 
@@ -61,7 +72,7 @@ function kepalaDokumen(dok, kriteria, ringkasan, dicetakPada) {
   };
 
   const akhirKiri = gambarPasangan(kiri, MARGIN, 74);
-  const akhirKanan = gambarPasangan(kanan, kolomKanan, 82);
+  const akhirKanan = gambarPasangan(kanan, kolomKanan, 92);
 
   return Math.max(akhirKiri, akhirKanan) + 6;
 }
@@ -104,6 +115,10 @@ function gambarBaris(dok, isi, y) {
 
   const nilai = {
     tanggal: tanggalPendek(t.tanggal),
+    // Sumbernya dihitung database di view pembayaran_semua, bukan di sini:
+    // layar, PDF, dan ekspor harus menyebut sumber yang sama untuk baris yang
+    // sama. Baris lama yang belum punya kolom ini tetap dibaca sebagai BCA.
+    sumber: t.sumber ?? 'BCA',
     keterangan: null, // digambar sendiri karena bisa lebih dari satu baris
     debit: Number(t.debit ?? 0) > 0 ? rupiah(t.debit) : '-',
     kredit: Number(t.kredit ?? 0) > 0 ? rupiah(t.kredit) : '-',
@@ -150,6 +165,10 @@ export function buatPdfLaporan(transaksi, kriteria = {}, sekarang = new Date()) 
   const ukur = (teks) => dok.widthOfString(teks);
 
   const ringkasan = totalkan(transaksi);
+  // Dijumlahkan dari baris yang benar-benar masuk laporan, bukan diambil dari
+  // ringkasan yang dihitung terpisah. Total yang tidak sama dengan penjumlahan
+  // baris di bawahnya menghancurkan kepercayaan pada seluruh laporan.
+  const perSumber = totalkanPerSumber(transaksi);
   const dicetakPada = new Intl.DateTimeFormat('id-ID', {
     dateStyle: 'long', timeStyle: 'short', timeZone: 'Asia/Jakarta',
   }).format(sekarang);
@@ -157,7 +176,11 @@ export function buatPdfLaporan(transaksi, kriteria = {}, sekarang = new Date()) 
   // Ruang yang tersisa untuk baris berbeda antara halaman pertama, yang memuat
   // kop lengkap, dan halaman berikutnya yang hanya memuat kepala tabel.
   const batasBawah = A4.tinggi - MARGIN - 22;
-  const tinggiKop = 132;
+  // Tingginya mengikuti jumlah baris ringkasan, yang kini bertambah satu tiap
+  // sumber yang muncul. Angka tetap akan membuat baris terakhir halaman
+  // pertama meluber begitu ada tiga sumber sekaligus.
+  const barisKanan = 4 + perSumber.per_sumber.length;
+  const tinggiKop = 37 + Math.max(5, barisKanan) * 11 + 6;
   const tinggiKepalaTabel = 17;
 
   const halaman = susunHalaman(transaksi, {
@@ -176,7 +199,7 @@ export function buatPdfLaporan(transaksi, kriteria = {}, sekarang = new Date()) 
     if (indeks > 0) dok.addPage();
 
     let y = indeks === 0
-      ? kepalaDokumen(dok, kriteria, ringkasan, dicetakPada)
+      ? kepalaDokumen(dok, kriteria, ringkasan, perSumber, dicetakPada)
       : MARGIN;
 
     y = kepalaTabel(dok, y);

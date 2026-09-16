@@ -48,6 +48,12 @@ function kriteriaFormulir() {
     const bersih = String(nilai).trim().replace(/\s+/g, ' ');
     if (bersih !== '') parameter.set(nama, bersih);
   }
+
+  // Halaman ini menjawab "supplier ini sudah saya bayar belum", dan jawabannya
+  // tidak lengkap tanpa pembayaran di luar rekening koran. Halaman Rekonsiliasi
+  // Bank memakai endpoint yang sama tanpa penanda ini, sehingga di sana yang
+  // tampil tetap hanya baris e-statement.
+  parameter.set('termasuk_manual', '1');
   return parameter;
 }
 
@@ -92,9 +98,18 @@ function baris(t) {
   const nominal = Number(t.debit ?? 0) + Number(t.kredit ?? 0);
   const keluar = Number(t.debit ?? 0) > 0;
 
+  // Sumbernya dihitung database di view pembayaran_semua, bukan di sini, supaya
+  // layar, PDF, dan ekspor tidak mungkin menyebut sumber berbeda untuk baris
+  // yang sama. Baris manual diberi gaya tersendiri: yang paling berbahaya di
+  // halaman ini adalah pembayaran yang diketik orang terbaca seolah berasal
+  // dari rekening koran.
+  const sumber = t.sumber ?? 'BCA';
+  const manual = (t.asal ?? 'bank') === 'manual';
+
   return `
-    <tr>
+    <tr${manual ? ' class="baris-manual"' : ''}>
       <td>${aman(formatTanggalPolos(t.tanggal))}${t.tanggal_ambigu ? ' <span class="tanda" title="Tanggal ambigu">?</span>' : ''}</td>
+      <td><span class="lencana-sumber${manual ? ' sumber-manual' : ''}">${aman(sumber)}</span></td>
       <td class="keterangan-sel">${aman(t.keterangan)}</td>
       <td class="angka-kolom${keluar ? ' keluar' : ''}">${formatNominal(t.debit)}</td>
       <td class="angka-kolom">${formatNominal(t.kredit)}</td>
@@ -147,7 +162,7 @@ export async function cariBayaran(lanjut = false) {
 
     // Pesan "hasil dikosongkan" milik pencarian sebelumnya tidak boleh
     // menempel di atas hasil yang baru.
-    kotak.innerHTML = `<tr><td colspan="6">${kosong('Mencari…')}</td></tr>`;
+    kotak.innerHTML = `<tr><td colspan="7">${kosong('Mencari…')}</td></tr>`;
     pesanCetak('', '');
   }
 
@@ -173,7 +188,7 @@ export async function cariBayaran(lanjut = false) {
 
       const isi = hasil.data.map(baris).join('');
       if (pertama) {
-        kotak.innerHTML = isi || `<tr><td colspan="6">${kosong('Tidak ada hasil.')}</td></tr>`;
+        kotak.innerHTML = isi || `<tr><td colspan="7">${kosong('Tidak ada hasil.')}</td></tr>`;
         pertama = false;
       } else if (isi !== '') {
         kotak.insertAdjacentHTML('beforeend', isi);
@@ -191,7 +206,7 @@ export async function cariBayaran(lanjut = false) {
     gambarKopCetak(total, ringkasan);
     el('muat-bayaran').hidden = mulai >= total;
   } catch (error) {
-    kotak.innerHTML = `<tr><td colspan="6">${kosong(error.message)}</td></tr>`;
+    kotak.innerHTML = `<tr><td colspan="7">${kosong(error.message)}</td></tr>`;
     el('ringkasan-bayaran').innerHTML = '';
     el('muat-bayaran').hidden = true;
   }
@@ -328,7 +343,7 @@ function kosongkanHasil() {
   total = 0;
 
   el('isi-tabel-bayaran').innerHTML =
-    `<tr><td colspan="6">${kosong('Hasil dikosongkan setelah PDF disimpan. Tekan Cari / Terapkan Filter untuk menampilkannya lagi.')}</td></tr>`;
+    `<tr><td colspan="7">${kosong('Hasil dikosongkan setelah PDF disimpan. Tekan Cari / Terapkan Filter untuk menampilkannya lagi.')}</td></tr>`;
   el('ringkasan-bayaran').innerHTML = '';
   el('muat-bayaran').hidden = true;
 

@@ -619,6 +619,160 @@ as $fn$
     and (p_sampai is null or t.tanggal <= p_sampai);
 $fn$;
 grant select on transaksi_bank_unik to service_role;
+--
+--
+create table if not exists pembayaran_manual (
+  id            uuid primary key default gen_random_uuid(),
+  tanggal       date not null,
+  penerima      text not null check (length(trim(penerima)) > 0),
+  nominal       numeric(14, 2) not null check (nominal > 0),
+  sumber        text not null check (sumber in (
+                  'MEKARI_PAY', 'BCA', 'BANK_LAIN', 'KAS', 'LAINNYA')),
+  no_referensi  text,
+  memo          text,
+  bukti_url     text,
+  bulan int generated always as (extract(month from tanggal)) stored,
+  tahun int generated always as (extract(year  from tanggal)) stored,
+  dibuat_pada   timestamptz not null default now(),
+  dibuat_oleh   text not null check (length(trim(dibuat_oleh)) > 0),
+  diubah_pada   timestamptz,
+  diubah_oleh   text
+);
+create index if not exists idx_bayar_manual_tanggal  on pembayaran_manual (tanggal desc);
+create index if not exists idx_bayar_manual_periode  on pembayaran_manual (tahun, bulan);
+create index if not exists idx_bayar_manual_penerima on pembayaran_manual (lower(penerima));
+--
+--
+create table if not exists pembayaran_manual_riwayat (
+  id             uuid primary key default gen_random_uuid(),
+  pembayaran_id  uuid not null,
+  aksi           text not null check (aksi in ('BUAT', 'UBAH', 'HAPUS')),
+  data_lama      jsonb,
+  data_baru      jsonb,
+  oleh           text,
+  pada           timestamptz not null default now()
+);
+create index if not exists idx_riwayat_bayar on pembayaran_manual_riwayat (pembayaran_id, pada desc);
+create or replace function catat_riwayat_pembayaran()
+returns trigger
+language plpgsql
+security definer
+set search_path = public
+as $fn$
+declare
+  v_pelaku text := nullif(current_setting('app.pelaku', true), '');
+begin
+  if tg_op = 'INSERT' then
+    insert into pembayaran_manual_riwayat (pembayaran_id, aksi, data_baru, oleh)
+    values (new.id, 'BUAT', to_jsonb(new), coalesce(v_pelaku, new.dibuat_oleh));
+    return new;
+  elsif tg_op = 'UPDATE' then
+    insert into pembayaran_manual_riwayat (pembayaran_id, aksi, data_lama, data_baru, oleh)
+    values (new.id, 'UBAH', to_jsonb(old), to_jsonb(new),
+            coalesce(v_pelaku, new.diubah_oleh, new.dibuat_oleh));
+    return new;
+  else
+    insert into pembayaran_manual_riwayat (pembayaran_id, aksi, data_lama, oleh)
+    values (old.id, 'HAPUS', to_jsonb(old), coalesce(v_pelaku, old.diubah_oleh, old.dibuat_oleh));
+    return old;
+  end if;
+end;
+$fn$;
+drop trigger if exists trg_riwayat_pembayaran on pembayaran_manual;
+create trigger trg_riwayat_pembayaran
+  after insert or update or delete on pembayaran_manual
+  for each row execute function catat_riwayat_pembayaran();
+create or replace function hapus_pembayaran_manual(p_id uuid, p_oleh text)
+returns int
+language plpgsql
+security definer
+set search_path = public
+as $fn$
+declare
+  v_jumlah int;
+begin
+  perform set_config('app.pelaku', coalesce(nullif(trim(p_oleh), ''), 'tidak diketahui'), true);
+  delete from pembayaran_manual where id = p_id;
+  get diagnostics v_jumlah = row_count;
+  return v_jumlah;
+end;
+$fn$;
+--
+--
+--
+create or replace view pembayaran_semua
+with (security_invoker = true) as
+select
+  'bank'::text                as asal,
+  'BCA'::text                 as sumber,
+  t.id, t.unggahan_id, t.baris_sumber, t.berkas_sumber,
+  t.tanggal, t.tanggal_ambigu, t.keterangan,
+  t.debit, t.kredit, t.saldo, t.referensi,
+  t.status_data, t.masalah, t.duplikat,
+  t.status_rekon, t.referensi_rekon, t.catatan_rekon,
+  t.nominal_pembanding, t.selisih, t.direkon_pada, t.direkon_oleh,
+  t.dibuat_pada, t.bulan, t.tahun,
+  null::text                  as memo,
+  null::text                  as bukti_url,
+  null::text                  as dibuat_oleh
+from transaksi_bank_unik t
+union all
+select
+  'manual'::text,
+  case m.sumber
+    when 'MEKARI_PAY' then 'MEKARI PAY'
+    when 'BANK_LAIN'  then 'BANK LAIN'
+    when 'BCA'        then 'BCA (MANUAL)'
+    else m.sumber
+  end,
+  m.id, null::uuid, null::int, null::text,
+  m.tanggal, false,
+  m.penerima || coalesce(' - ' || nullif(trim(m.memo), ''), ''),
+  m.nominal, 0::numeric(14,2), null::numeric(14,2), m.no_referensi,
+  'valid'::text, '{}'::text[], false,
+  'belum'::text, null::text, null::text,
+  null::numeric(14,2), null::numeric(14,2), null::timestamptz, null::text,
+  m.dibuat_pada, m.bulan, m.tahun,
+  m.memo, m.bukti_url, m.dibuat_oleh
+from pembayaran_manual m;
+--
+--
+create or replace function ringkasan_pembayaran(
+  p_cari   text default null,
+  p_bulan  int  default null,
+  p_tahun  int  default null,
+  p_dari   date default null,
+  p_sampai date default null,
+  p_hanya_debit boolean default false
+)
+returns table (kelompok text, jumlah bigint, debit numeric, kredit numeric)
+language sql
+stable
+set search_path = public
+as $fn$
+  select
+    case
+      when p.asal = 'bank'          then 'BCA'
+      when p.sumber = 'MEKARI PAY'  then 'MEKARI PAY'
+      else 'MANUAL LAINNYA'
+    end,
+    count(*),
+    coalesce(sum(p.debit), 0),
+    coalesce(sum(p.kredit), 0)
+  from pembayaran_semua p
+  where (p_cari is null or p_cari = ''
+         or p.keterangan ilike '%' || p_cari || '%'
+         or coalesce(p.referensi, '') ilike '%' || p_cari || '%')
+    and (p_bulan  is null or p.bulan = p_bulan)
+    and (p_tahun  is null or p.tahun = p_tahun)
+    and (p_dari   is null or p.tanggal >= p_dari)
+    and (p_sampai is null or p.tanggal <= p_sampai)
+    and (not p_hanya_debit or p.debit > 0)
+  group by 1;
+$fn$;
+alter table pembayaran_manual          enable row level security;
+alter table pembayaran_manual_riwayat  enable row level security;
+grant select on pembayaran_semua to service_role;
 
 -- Setelah skema berubah, PostgREST masih memakai peta lama sampai diberi
 -- tahu. Tanpa ini tabel baru tetap dilaporkan "not found in the schema

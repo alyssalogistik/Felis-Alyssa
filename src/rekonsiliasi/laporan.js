@@ -14,19 +14,25 @@ export const MARGIN = 34;
  *
  * Angkanya diukur dari font yang benar-benar dipakai (Helvetica 8 pt), bukan
  * dikira-kira: setiap kolom harus memuat judulnya sendiri maupun isi terlebar
- * yang mungkin muncul, ditambah 6 pt jarak tepi. Kolom yang terlalu sempit
+ * yang mungkin muncul, ditambah 6 pt jarak tepi DAN sedikit kelonggaran —
+ * lebar yang pas mepet tetap membungkus, bukan muat. "06 Mei 2025" pada kolom
+ * 50 pt pernah pecah menjadi dua baris karena ini.
+ *
+ * Kolom terlebar yang harus dimuat: SUMBER "BCA (MANUAL)" 57 pt, REFERENSI
+ * "INV/AAL/10/I/2025" 66,3 pt. Kolom yang terlalu sempit
  * tidak membungkus melainkan terpotong diam-diam — REFERENSI pernah hilang
  * seluruhnya karena judulnya saja sudah lebih lebar dari kolomnya.
  *
  * Sisanya diberikan kepada KETERANGAN, satu-satunya kolom yang boleh membungkus.
  */
 export const KOLOM = [
-  { kunci: 'tanggal', judul: 'TANGGAL', lebar: 54 },
-  { kunci: 'keterangan', judul: 'KETERANGAN TRANSAKSI', lebar: 207 },
+  { kunci: 'tanggal', judul: 'TANGGAL', lebar: 56 },
+  { kunci: 'sumber', judul: 'SUMBER', lebar: 66 },
+  { kunci: 'keterangan', judul: 'KETERANGAN TRANSAKSI', lebar: 119 },
   { kunci: 'debit', judul: 'DEBIT / KELUAR', lebar: 72, kanan: true },
-  { kunci: 'kredit', judul: 'KREDIT / MASUK', lebar: 72, kanan: true },
+  { kunci: 'kredit', judul: 'KREDIT / MASUK', lebar: 74, kanan: true },
   { kunci: 'nominal', judul: 'NOMINAL', lebar: 66, kanan: true },
-  { kunci: 'referensi', judul: 'REFERENSI', lebar: 56 },
+  { kunci: 'referensi', judul: 'REFERENSI', lebar: 74 },
 ];
 
 const NAMA_BULAN = [
@@ -187,4 +193,56 @@ export function totalkan(transaksi) {
     kreditSen += Math.round(Number(t.kredit ?? 0) * 100);
   }
   return { jumlah: transaksi.length, debit: debitSen / 100, kredit: kreditSen / 100 };
+}
+
+/**
+ * Kelompok sumber untuk blok total.
+ *
+ * "BCA" hanya baris rekening koran. Pembayaran manual yang sumbernya BCA masuk
+ * "MANUAL LAINNYA", bukan BCA — supaya Total BCA tetap berarti "yang benar-benar
+ * ada di e-statement" dan bisa dicocokkan dengan rekening korannya tanpa selisih
+ * yang tidak bisa dijelaskan. Aturan yang sama dipakai ringkasan_pembayaran() di
+ * database; kalau salah satu diubah, ubah keduanya.
+ */
+export function kelompokSumber(t) {
+  if ((t.asal ?? 'bank') === 'bank') return 'BCA';
+  if (t.sumber === 'MEKARI PAY') return 'MEKARI PAY';
+  return 'MANUAL LAINNYA';
+}
+
+export const URUTAN_KELOMPOK = ['BCA', 'MEKARI PAY', 'MANUAL LAINNYA'];
+
+/**
+ * Total per sumber DAN total keseluruhan, dihitung dari baris yang benar-benar
+ * masuk laporan.
+ *
+ * Bukan diambil dari ringkasan yang dihitung terpisah: laporan dan ringkasan
+ * bisa saja menyaring himpunan yang sedikit berbeda, dan angka total yang tidak
+ * sama dengan penjumlahan baris di bawahnya menghancurkan kepercayaan pada
+ * seluruh laporan. Di sini TOTAL PEMBAYARAN dijamin sama dengan jumlah
+ * barisnya, karena memang dijumlahkan dari baris yang sama.
+ */
+export function totalkanPerSumber(transaksi) {
+  const kelompok = new Map(URUTAN_KELOMPOK.map((k) => [k, { kelompok: k, jumlah: 0, debitSen: 0 }]));
+  let totalSen = 0;
+
+  for (const t of transaksi) {
+    const kunci = kelompokSumber(t);
+    const baris = kelompok.get(kunci) ?? { kelompok: kunci, jumlah: 0, debitSen: 0 };
+    const debitSen = Math.round(Number(t.debit ?? 0) * 100);
+    baris.jumlah += 1;
+    baris.debitSen += debitSen;
+    totalSen += debitSen;
+    kelompok.set(kunci, baris);
+  }
+
+  return {
+    // Kelompok yang kosong tetap disembunyikan: baris "Total Mekari Pay: Rp 0"
+    // pada laporan yang memang tidak memuat Mekari Pay hanya menambah keraguan.
+    per_sumber: [...kelompok.values()]
+      .filter((k) => k.jumlah > 0)
+      .map((k) => ({ kelompok: k.kelompok, jumlah: k.jumlah, debit: k.debitSen / 100 })),
+    total: totalSen / 100,
+    jumlah: transaksi.length,
+  };
 }
