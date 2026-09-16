@@ -266,11 +266,69 @@
       </details>
     </div>
 
-    <section class="panel" id="panel-supplier">
-      <h3>Supplier di Rekening Koran</h3>
+    <section class="panel" id="panel-bayar-manual">
+      <h3 id="judul-bayar-manual">Input Pembayaran Manual</h3>
       <p class="keterangan-panel">
-        Nama yang muncul di keterangan rekening koran, beserta total uang keluar
-        ke masing-masing. Klik satu nama untuk melihat seluruh transfernya.
+        Pembayaran yang tidak lewat rekening koran BCA &mdash; Mekari Pay, kas,
+        atau bank lain. Disimpan terpisah dari transaksi bank, tetapi ikut tampil
+        di hasil pencarian dan laporan PDF dengan sumbernya tertulis jelas.
+      </p>
+
+      <form id="form-bayar-manual" class="formulir">
+        <div class="sejajar">
+          <label>Tanggal pembayaran <span class="wajib">*</span>
+            <input name="tanggal" type="date" required>
+          </label>
+          <label>Sumber pembayaran <span class="wajib">*</span>
+            <select name="sumber" required></select>
+          </label>
+        </div>
+
+        <label>Nama supplier / penerima <span class="wajib">*</span>
+          <input name="penerima" placeholder="SUGENG RIYANTO" required autocomplete="off">
+        </label>
+
+        <div class="sejajar">
+          <label>Nominal (Rp) <span class="wajib">*</span>
+            <input name="nominal" inputmode="numeric" placeholder="28.000.000" required autocomplete="off">
+          </label>
+          <label>Nomor invoice / referensi
+            <input name="no_referensi" placeholder="INV/AAL/10/I/2025" autocomplete="off">
+          </label>
+        </div>
+
+        <label>Memo / keterangan
+          <input name="memo" placeholder="Termin 1" autocomplete="off">
+        </label>
+
+        <label>Link bukti pembayaran (opsional)
+          <input name="bukti_url" type="url" placeholder="https://drive.google.com/..." autocomplete="off">
+        </label>
+
+        <label>Diinput oleh <span class="wajib">*</span>
+          <input name="dibuat_oleh" placeholder="Nama Anda" required autocomplete="off">
+        </label>
+
+        <p id="pesan-bayar-manual" class="pesan" hidden></p>
+
+        <div class="sejajar rapat">
+          <button type="button" id="batal-bayar-manual" class="tombol-lembut" hidden>Batal ubah</button>
+          <button type="submit" id="simpan-bayar-manual" class="tombol">Simpan pembayaran</button>
+        </div>
+      </form>
+
+      <details class="lipat lipat-dalam" id="lipat-bayar-manual">
+        <summary>Pembayaran manual tersimpan</summary>
+        <div id="daftar-bayar-manual"></div>
+      </details>
+    </section>
+
+    <section class="panel" id="panel-supplier">
+      <h3>Supplier &amp; Penerima Pembayaran</h3>
+      <p class="keterangan-panel">
+        Nama dari keterangan rekening koran maupun pembayaran manual, beserta
+        total uang keluar ke masing-masing. Supplier yang dibayar lewat Mekari
+        Pay ikut di sini. Klik satu nama untuk melihat seluruh pembayarannya.
       </p>
 
       <label>Saring nama
@@ -347,6 +405,7 @@
         <thead>
           <tr>
             <th>Tanggal</th>
+            <th>Sumber</th>
             <th>Keterangan Transaksi</th>
             <th class="angka-kolom">Debit / Keluar</th>
             <th class="angka-kolom">Kredit / Masuk</th>
@@ -448,6 +507,30 @@
     <button type="button" id="tutup-audit" class="tombol-lembut">Tutup</button>
   </dialog>
 
+  <dialog id="modal-kembar">
+    <h3>Mungkin sudah pernah dicatat</h3>
+    <p class="keterangan-panel">
+      Pembayaran berikut mirip dengan yang akan disimpan. Periksa dulu &mdash;
+      mencatat pembayaran yang sama dua kali membuat supplier tampak sudah
+      dibayar lebih besar daripada yang sebenarnya.
+    </p>
+
+    <div id="isi-kembar"></div>
+
+    <div class="peringatan-hapus">
+      <label>
+        <input type="checkbox" id="setuju-kembar">
+        <span>Saya sudah memeriksa dan yakin ini <strong>pembayaran yang berbeda</strong>,
+        bukan yang sudah tercatat di atas.</span>
+      </label>
+    </div>
+
+    <div class="aksi-modal">
+      <button type="button" id="batal-kembar" class="tombol-lembut">Batal</button>
+      <button type="button" id="lanjut-kembar" class="tombol">Simpan tetap</button>
+    </div>
+  </dialog>
+
   <dialog id="modal-hapus-unggahan">
     <h3>Hapus unggahan rekening koran?</h3>
     <p class="keterangan-panel">
@@ -460,9 +543,9 @@
     <div id="persetujuan-hapus" class="peringatan-hapus" hidden>
       <label>
         <input type="checkbox" id="setuju-hapus-kecocokan">
-        Saya mengerti <strong><span id="jumlah-kecocokan-dikonfirmasi">0</span> kecocokan audit
+        <span>Saya mengerti <strong><span id="jumlah-kecocokan-dikonfirmasi">0</span> kecocokan audit
         yang sudah dikonfirmasi</strong> akan ikut terhapus dan tidak bisa dipulihkan
-        oleh audit otomatis.
+        oleh audit otomatis.</span>
       </label>
     </div>
 

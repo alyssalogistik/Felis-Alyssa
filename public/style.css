@@ -385,6 +385,49 @@ dialog::backdrop { background: rgba(0, 0, 0, .65); }
 dialog h3 { margin: 0 0 4px; font-size: 16px; }
 dialog .tombol-lembut, dialog .tombol { margin-top: 0; }
 
+/* --- Pembayaran manual --------------------------------------------------- */
+
+/* Sumbernya harus terbaca sekilas: pembayaran yang diketik orang tidak boleh
+   tampak berasal dari rekening koran. */
+.lencana-sumber {
+  display: inline-block;
+  padding: 3px 8px;
+  border-radius: 999px;
+  background: rgba(74,158,255,.14); color: var(--biru);
+  font-size: 11px; font-weight: 700;
+  letter-spacing: .3px; white-space: nowrap;
+}
+.lencana-sumber.sumber-manual { background: rgba(169,112,255,.16); color: var(--ungu); }
+.baris-manual { background: rgba(169,112,255,.05); }
+
+.baris-bayar {
+  display: flex; flex-direction: column; gap: 4px;
+  padding: 12px 0; border-bottom: 1px solid var(--garis);
+}
+.baris-bayar:last-child { border-bottom: 0; }
+.bayar-utama { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.bayar-utama strong { flex: 1 1 auto; font-size: 14px; }
+
+.aksi-bayar { display: flex; gap: 8px; margin-top: 4px; }
+.tombol-kecil {
+  padding: 5px 12px;
+  border: 1px solid var(--garis); border-radius: 9px;
+  background: transparent; color: var(--teks-redup);
+  font-size: 12px; cursor: pointer;
+}
+.tombol-kecil:hover, .tombol-kecil:focus-visible { border-color: var(--aksen); color: var(--aksen); }
+
+.kandidat-kembar {
+  padding: 10px 12px; margin-bottom: 8px;
+  border: 1px solid var(--garis); border-radius: 11px;
+  background: var(--latar);
+}
+/* Kandidat kuat ditandai merah: yang paling mahal di halaman ini adalah
+   pembayaran yang sama dicatat dua kali. */
+.kandidat-kembar.kembar-kuat { border-color: var(--merah); background: rgba(255,92,92,.08); }
+
+#isi-kembar { max-height: 45vh; overflow-y: auto; margin: 12px 0; }
+
 /* --- Hapus unggahan ------------------------------------------------------ */
 
 .pesan.peringatan { background: rgba(245,165,36,.12); color: var(--aksen); }
@@ -409,8 +452,24 @@ dialog .tombol-lembut, dialog .tombol { margin-top: 0; }
   border: 1px solid var(--merah); border-radius: 11px;
   background: rgba(255,92,92,.1);
 }
-.peringatan-hapus label { display: flex; gap: 10px; font-size: 13px; line-height: 1.5; }
-.peringatan-hapus input { margin-top: 2px; flex: 0 0 auto; }
+.peringatan-hapus label {
+  display: flex; align-items: flex-start; gap: 10px;
+  margin-top: 0; font-size: 13px; line-height: 1.5; color: var(--teks);
+}
+/* Aturan formulir umum memberi setiap input width 100% dan padding tebal.
+   Pada kotak centang itu menghasilkan persegi putih selebar dialog yang
+   mendorong teks persetujuannya keluar layar — dan persetujuan yang tidak
+   terbaca bukan persetujuan. */
+/* Teks persetujuannya dibungkus satu span. Tanpa itu setiap <strong> di
+   dalamnya menjadi flex item tersendiri dan kalimatnya terpecah menjadi
+   beberapa kolom yang saling berdampingan. */
+.peringatan-hapus label > span { flex: 1 1 auto; }
+
+.peringatan-hapus input[type="checkbox"] {
+  width: 18px; height: 18px; flex: 0 0 18px;
+  margin: 2px 0 0; padding: 0;
+  accent-color: var(--merah);
+}
 
 .aksi-modal { display: flex; gap: 10px; margin-top: 16px; }
 .aksi-modal > * { flex: 1; }

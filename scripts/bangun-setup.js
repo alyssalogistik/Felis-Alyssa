@@ -24,6 +24,7 @@ const urutan = [
   '0005_filter_tanggal_audit.sql',
   '0006_sidik_transaksi.sql',
   '0007_tampilan_tanpa_ganda.sql',
+  '0008_pembayaran_manual.sql',
 ];
 
 // Komentar dibuang supaya yang harus disalin lewat layar sentuh sependek
@@ -42,8 +43,16 @@ function tagUlang(sql) {
   return sql.replace(/\$\$/g, '$fn$');
 }
 
+// Migration yang berdiri sendiri memanggil pg_notify lewat SELECT di akhirnya.
+// Di dalam blok DO, SELECT telanjang bukan perintah yang sah — plpgsql menuntut
+// PERFORM. Barisnya dibuang di sini karena berkas ini sudah memanggilnya sendiri
+// satu kali di akhir, sesudah seluruh migration dijalankan.
+function buangNotify(sql) {
+  return sql.replace(/^\s*select\s+pg_notify\([^;]*\);\s*$/gim, '');
+}
+
 const bagian = urutan.map((berkas) =>
-  tagUlang(ringkas(readFileSync(join(akar, 'supabase/migrations', berkas), 'utf8')))
+  tagUlang(ringkas(buangNotify(readFileSync(join(akar, 'supabase/migrations', berkas), 'utf8'))))
 );
 
 // Peringatan "destructive operations" di SQL Editor Supabase memindai teks

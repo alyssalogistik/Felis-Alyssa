@@ -9,6 +9,7 @@ import { pasangKendaliAudit, muatAudit, muatStatusKoran } from './audit.js';
 import { pasangKendaliBayaran, cariBayaran, cariSupplier } from './bayaran.js';
 import { pasangKendaliSupplier, muatSupplier } from './supplier.js';
 import { pasangKendaliImpor } from './impor.js';
+import { pasangKendaliPembayaran, muatPembayaranManual } from './pembayaran.js';
 
 const STATUS = {
   baru:       'Baru',
@@ -238,7 +239,7 @@ function arahkan() {
 
   if (nama === 'beranda') muatBeranda();
   else if (nama === 'rekonsiliasi') muatRekonsiliasi();
-  else if (nama === 'audit') { muatAudit(); muatSupplier(); cariBayaran(); }
+  else if (nama === 'audit') { muatAudit(); muatSupplier(); muatPembayaranManual(); cariBayaran(); }
   else if (nama === 'trip') muatTrip();
   else if (nama === 'detail') muatDetail(bagian[1]);
   else if (nama === 'pesanan') {
@@ -344,6 +345,15 @@ pasangKendaliSupplier(cariSupplier);
 // yang sudah tidak ada dasarnya di database.
 pasangKendaliImpor(async () => {
   await Promise.all([muatSupplier(), muatRekonsiliasi(), muatStatusKoran()]);
+});
+
+// Menambah, mengubah, atau menghapus pembayaran manual mengubah hasil
+// pencarian, ringkasan per sumber, dan daftar supplier sekaligus. Ketiganya
+// disegarkan bersama supaya layar tidak menampilkan total lama yang sudah tidak
+// ada dasarnya — dan total yang terlalu kecil di halaman ini terbaca sebagai
+// kurang bayar.
+pasangKendaliPembayaran(async () => {
+  await Promise.all([muatSupplier(), cariBayaran()]);
 });
 
 window.addEventListener('hashchange', arahkan);
