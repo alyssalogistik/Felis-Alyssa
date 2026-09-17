@@ -14,7 +14,7 @@ import { GalatFormat, ringkasValidasi } from './parser.js';
 import { idUnggahanValid, periksaHapus, rincianHapus } from './hapus.js';
 import { saringPembayaran, saringPerubahan } from './pembayaran.js';
 import { cariKembar, peringatanSumber, perluKonfirmasi } from './kembar-bayar.js';
-import { cocokkanPending, pendingSudahDibukukan } from './pending.js';
+import { cocokkanPending, sudahTersimpan } from './pending.js';
 import audit from './audit.js';
 
 const db = createAdminClient();
@@ -193,11 +193,33 @@ api.post(
       .single();
     if (galatUnggahan) throw galatUnggahan;
 
-    // Baris PEND yang transaksinya sudah tersimpan bertanggal tidak disisipkan
-    // ulang; sidik jari tidak bisa menahannya karena tanggalnya berbeda.
-    const pendSudahAda = new Set(await pendYangSudahAda(hasil));
+    // Baris PEND yang kini bertanggal dilunasi LEBIH DULU.
+    //
+    // Urutan ketiga langkah di bawah ini yang menentukan hasilnya, dan ketiganya
+    // harus selesai sebelum satu baris pun disisipkan:
+    //
+    //   1. Pelunasan mengisi tanggal baris PEND yang sudah tersimpan.
+    //   2. Pemeriksaan duplikat membaca ulang database — sehingga baris yang
+    //      baru saja dilunasi sudah terbaca bertanggal, dan transaksi baru yang
+    //      melunasinya ikut dikenali sebagai transaksi yang sama.
+    //   3. Sisanya disisipkan.
+    //
+    // Kalau nomor 2 berjalan lebih dulu, baris PEND masih bertanggal kosong saat
+    // dibandingkan, sehingga transaksi yang melunasinya lolos sebagai transaksi
+    // baru — dan satu transfer tersimpan dua kali: sekali sebagai baris PEND
+    // yang baru dilunasi, sekali sebagai baris dari cetakan yang melunasinya.
+    const pelunasan = await lunasiPending(hasil);
 
-    const baris = hasil.transaksi.filter((t) => !pendSudahAda.has(t)).map((t) => ({
+    // Transaksi yang sudah tersimpan dari cetakan BCA bentuk lain tidak
+    // disisipkan ulang. Sidik jari tidak bisa menahannya: yang membedakannya
+    // justru tanggal (kosong pada baris PEND) dan kalimat keterangannya.
+    const dariCetakanLain = new Set(await sudahAdaDariCetakanLain(hasil));
+
+    // Irisan periode dilaporkan sebagai peringatan, bukan penolakan: irisan yang
+    // wajar memang ada, dan menolak berkas yang sah jauh lebih mengganggu.
+    const irisan = await irisanTersimpan(hasil);
+
+    const baris = hasil.transaksi.filter((t) => !dariCetakanLain.has(t)).map((t) => ({
       unggahan_id: unggahan.id,
       baris_sumber: t.baris_sumber,
       berkas_sumber: t.berkas_sumber,
@@ -214,23 +236,6 @@ api.post(
       no_rekening: hasil.noRekening ?? null,
       kembar_ke: t.kembar_ke ?? 1,
     }));
-
-    // Baris PEND yang kini bertanggal dilunasi LEBIH DULU, sebelum penyisipan.
-    //
-    // Urutannya menentukan hasilnya. Setelah tanggalnya diisi, sidik jari baris
-    // PEND menjadi sama persis dengan transaksi baru yang melunasinya, sehingga
-    // transaksi baru itu tertolak indeks unik sebagai duplikat — satu baris,
-    // bukan dua. Kalau penyisipan berjalan lebih dulu, keduanya sudah telanjur
-    // tersimpan berdampingan dan satu transfer terhitung dua kali.
-    const pelunasan = await lunasiPending(hasil);
-
-    // Irisan periode: apakah rentang tanggal berkas ini menyentuh transaksi yang
-    // sudah tersimpan? E-statement bulanan dan Mutasi Rekening harian menuliskan
-    // keterangan transaksi yang sama dengan kalimat yang berbeda, sehingga sidik
-    // jarinya berbeda dan penjaga duplikat tidak bisa menahannya. Yang bisa
-    // dilakukan menyebutkannya — bukan menolak berkasnya, karena irisan yang
-    // wajar memang ada.
-    const irisan = await irisanTersimpan(hasil);
 
     // upsert dengan ignoreDuplicates menghasilkan ON CONFLICT DO NOTHING:
     // transaksi yang sidik jarinya sudah ada dilewati, bukan ditimpa. Yang
@@ -269,7 +274,7 @@ api.post(
       status,
       rentang: hasil.rentang ?? null,
       pending: hasil.pending ?? 0,
-      pelunasan_pending: { ...pelunasan, sudah_dibukukan: pendSudahAda.size },
+      pelunasan_pending: { ...pelunasan, sudah_dari_cetakan_lain: dariCetakanLain.size },
       irisan_periode: irisan,
       kolom_terdeteksi: Object.keys(hasil.peta),
       pernah_diunggah: sebelumnya?.[0] ?? null,
@@ -342,43 +347,54 @@ async function lunasiPending(hasil) {
 }
 
 /**
- * Baris PEND pada berkas ini yang transaksinya sudah tersimpan bertanggal.
+ * Transaksi pada berkas ini yang sudah tersimpan dari cetakan lain.
  *
- * Kebalikan dari lunasiPending(). Berkas lama yang diunggah lagi — misalnya satu
- * PDF gabungan yang memuat cetakan lama beserta baris PEND-nya — akan membawa
- * versi PEND dari transaksi yang sudah dibukukan. Sidik jari tidak menahannya,
- * karena yang satu bertanggal dan yang satu tidak, sehingga satu transfer bisa
- * terhitung dua kali.
+ * Sidik jari di database tidak bisa menahannya, karena dua hal yang ikut
+ * menyusunnya justru yang berbeda: tanggal (kosong pada baris PEND) dan
+ * keterangan (kedua cetakan BCA menuliskannya dengan kalimat berbeda).
  *
- * Yang dikembalikan daftar transaksi yang harus dilewati saat penyisipan. Tidak
- * ada baris tersimpan yang disentuh di sini: yang dilakukan hanya TIDAK
+ * Yang dikembalikan daftar transaksi yang harus DILEWATI saat penyisipan. Tidak
+ * ada baris tersimpan yang disentuh di sini: yang dilakukan hanya tidak
  * menambah baris baru.
  */
-async function pendYangSudahAda(hasil) {
+async function sudahAdaDariCetakanLain(hasil) {
   if (!hasil.noRekening) return [];
 
-  const pend = hasil.transaksi.filter((t) => !t.tanggal);
-  if (pend.length === 0) return [];
-
-  // Saldo berjalan sangat memilah, jadi dipakai menyempitkan kueri lebih dulu.
-  const saldo = [...new Set(pend.map((t) => t.saldo).filter((s) => s !== null))];
+  // Saldo berjalan sangat memilah, jadi dipakai menyempitkan kueri lebih dulu:
+  // hanya baris tersimpan yang saldonya muncul di berkas ini yang perlu dibaca.
+  const saldo = [...new Set(hasil.transaksi.map((t) => t.saldo).filter((x) => x !== null))];
   if (saldo.length === 0) return [];
 
-  const { data: bertanggal, error } = await db
-    .from('transaksi_bank')
-    .select('keterangan, debit, kredit, saldo, no_rekening, tanggal')
-    .eq('no_rekening', hasil.noRekening)
-    .not('tanggal', 'is', null)
-    .in('saldo', saldo);
-  if (error) throw error;
+  const tersimpan = [];
+  for (let i = 0; i < saldo.length; i += UKURAN_BATCH) {
+    const { data, error } = await db
+      .from('transaksi_bank')
+      .select('keterangan, debit, kredit, saldo, no_rekening, tanggal')
+      .eq('no_rekening', hasil.noRekening)
+      .in('saldo', saldo.slice(i, i + UKURAN_BATCH));
+    if (error) throw error;
+    tersimpan.push(...(data ?? []));
+  }
 
-  // Baris bertanggal DI DALAM berkas ini sendiri ikut dibandingkan. Satu PDF
-  // gabungan bisa memuat cetakan lama beserta baris PEND-nya sekaligus cetakan
-  // berikutnya yang sudah membukukannya; tanpa ini keduanya tersisip bersamaan
-  // dan satu transfer terhitung dua kali sejak unggahan pertamanya.
-  const sendiri = hasil.transaksi.filter((t) => t.tanggal);
+  const dariDatabase = sudahTersimpan(tersimpan, hasil.transaksi, hasil.noRekening);
 
-  return pendingSudahDibukukan([...(bertanggal ?? []), ...sendiri], pend, hasil.noRekening);
+  // Baris PEND dibandingkan juga dengan baris bertanggal DI DALAM berkas ini
+  // sendiri. Satu PDF gabungan bisa memuat cetakan lama beserta baris PEND-nya
+  // sekaligus cetakan berikutnya yang sudah membukukannya; tanpa ini keduanya
+  // tersisip bersamaan dan satu transfer terhitung dua kali sejak unggahan
+  // pertamanya.
+  //
+  // Yang dibandingkan HANYA baris PEND. Membandingkan baris bertanggal dengan
+  // isi berkasnya sendiri membuat setiap baris cocok dengan dirinya sendiri,
+  // dan seluruh berkas dilewati sebagai “sudah ada” pada unggahan pertamanya —
+  // uang yang benar-benar keluar tidak pernah tercatat sama sekali.
+  const dariBerkasIni = sudahTersimpan(
+    hasil.transaksi.filter((t) => t.tanggal),
+    hasil.transaksi.filter((t) => !t.tanggal),
+    hasil.noRekening
+  );
+
+  return [...new Set([...dariDatabase, ...dariBerkasIni])];
 }
 
 /**

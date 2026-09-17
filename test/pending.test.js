@@ -10,7 +10,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { cocokkanPending, pendingSudahDibukukan } from '../src/rekonsiliasi/pending.js';
+import { cocokkanPending, intiKeterangan, sudahTersimpan } from '../src/rekonsiliasi/pending.js';
 import { bacaRekeningKoran } from '../src/rekonsiliasi/baca.js';
 
 const berkas = (nama) => readFileSync(join(dirname(fileURLToPath(import.meta.url)), 'berkas', nama));
@@ -152,52 +152,129 @@ test('transaksi lain pada berkas lanjutan tidak ikut melunasi apa pun', async ()
   assert.equal(promosi.length, 1, 'hanya baris PEND yang dilunasi');
 });
 
-// --- Arah kebalikannya: baris PEND yang sudah telanjur dibukukan ------------
+// --- Kalimat yang berbeda untuk transaksi yang sama --------------------------
 
-test('KAIDAH: baris PEND yang transaksinya sudah tersimpan bertanggal dilewati', () => {
-  // Terjadi saat berkas lama diunggah lagi — misalnya satu PDF gabungan yang
-  // memuat cetakan lama beserta baris PEND-nya. Sidik jari tidak menahannya,
-  // karena yang tersimpan bertanggal dan yang baru tidak.
-  const baruPend = { tanggal: null, keterangan: pend().keterangan, debit: 700000, kredit: 0, saldo: 12892305 };
-  const dilewati = pendingSudahDibukukan([final()], [baruPend], '0071234567');
-  assert.deepEqual(dilewati, [baruPend]);
+test('KAIDAH: awalan jenis transaksi kedua cetakan diseragamkan', () => {
+  // Inilah satu-satunya yang berbeda di antara kedua cetakan BCA; sisa
+  // kalimatnya sama persis. Tanpa penyeragaman ini, transaksi yang sama dari
+  // dua cetakan tidak pernah bisa dikenali sebagai satu transaksi.
+  const sama = (a, b) => assert.equal(intiKeterangan(a), intiKeterangan(b), `${a}  !=  ${b}`);
+  sama('BIF TRANSFER KE 008 HERMANSYAH KBB', 'BI-FAST DB TRANSFER KE 008 HERMANSYAH KBB');
+  sama('BIF BIAYA TXN KE 002 RUDI KBB', 'BI-FAST DB BIAYA TXN KE 002 RUDI KBB');
+  sama('BIF TRANSFER DR 016 INMAG KONSTRUKSI I', 'BI-FAST CR TRANSFER DR 016 INMAG KONSTRUKSI I');
+  sama('0104/FTSCY/WS95051 10000000.00 PINJAMAN AAL',
+       'TRSF E-BANKING DB 0104/FTSCY/WS95051 10000000.00 PINJAMAN AAL');
+});
+
+test('yang bukan awalan jenis tidak ikut terkupas', () => {
+  assert.equal(intiKeterangan('BIAYA ADM'), 'biaya adm');
+  assert.notEqual(intiKeterangan('BIAYA ADM'), intiKeterangan('BIAYA ADMIN'));
+  assert.equal(intiKeterangan('SETORAN TUNAI'), 'setoran tunai');
+});
+
+test('keterangan yang isinya hanya awalan tidak dikosongkan', () => {
+  // Kunci berketerangan kosong akan cocok dengan sembarang baris lain yang juga
+  // kosong, dan penahannya tinggal saldo saja.
+  assert.equal(intiKeterangan('BIF'), 'bif');
+  assert.equal(intiKeterangan('BI-FAST DB'), 'bi-fast db');
+});
+
+test('pencocokan PEND bekerja menyeberang format', () => {
+  const tersimpan = [pend({ keterangan: 'BI-FAST DB TRANSFER KE 008 HERMANSYAH KBB' })];
+  const baru = [final({ keterangan: 'BIF TRANSFER KE 008 HERMANSYAH KBB' })];
+  assert.deepEqual(cocokkanPending(tersimpan, baru), { promosi: [{ id: 'p1', tanggal: '2026-09-04' }], ragu: [] });
+});
+
+// --- Transaksi yang sudah tersimpan dari cetakan lain ------------------------
+
+const barisBaru = (ubah = {}) => ({
+  tanggal: '2026-09-04', keterangan: 'BIF TRANSFER KE 008 HERMANSYAH KBB',
+  debit: 700000, kredit: 0, saldo: 12892305, ...ubah,
+});
+
+test('KAIDAH: baris bertanggal yang sudah tersimpan dari cetakan lain dilewati', () => {
+  const b = barisBaru();
+  assert.deepEqual(sudahTersimpan([final()], [b], '0071234567'), [b]);
+});
+
+test('KAIDAH: tanggal yang berbeda berarti transaksi yang berbeda', () => {
+  // Dua transfer serupa pada dua hari berbeda adalah dua transaksi sungguhan.
+  assert.deepEqual(sudahTersimpan([final()], [barisBaru({ tanggal: '2026-09-05' })], '0071234567'), []);
+});
+
+test('baris PEND baru dilewati bila versi bertanggalnya sudah tersimpan', () => {
+  const b = barisBaru({ tanggal: null });
+  assert.deepEqual(sudahTersimpan([final()], [b], '0071234567'), [b]);
 });
 
 test('objek yang dikembalikan objek aslinya, bukan salinannya', () => {
   // Pemanggilnya mengenali baris yang harus dilewati dari identitasnya; salinan
-  // membuat penyaringnya diam-diam tidak melakukan apa-apa.
-  const baruPend = { tanggal: null, keterangan: pend().keterangan, debit: 700000, kredit: 0, saldo: 12892305 };
-  assert.equal(pendingSudahDibukukan([final()], [baruPend], '0071234567')[0], baruPend);
+  // membuat penyaringnya diam-diam tidak melakukan apa-apa, dan seluruh
+  // penjagaan ini berubah menjadi hiasan.
+  const b = barisBaru();
+  assert.equal(sudahTersimpan([final()], [b], '0071234567')[0], b);
 });
 
-test('baris PEND yang belum pernah dibukukan tetap disisipkan', () => {
-  const baruPend = { tanggal: null, keterangan: 'TRANSFER KE 002 ORANG LAIN', debit: 50000, kredit: 0, saldo: 99 };
-  assert.deepEqual(pendingSudahDibukukan([final()], [baruPend], '0071234567'), []);
+test('KAIDAH: saldo berjalan yang berbeda tidak pernah dilewati', () => {
+  // Saldo berjalan satu-satunya penahan kunci ini. Nominal dan penerima boleh
+  // sama persis; saldo tidak pernah sama untuk dua transaksi berbeda.
+  assert.deepEqual(sudahTersimpan([final()], [barisBaru({ saldo: 12892306 })], '0071234567'), []);
 });
 
-test('transaksi baru yang sudah bertanggal tidak pernah ikut dilewati', () => {
-  // Melewatkan transaksi sungguhan jauh lebih berbahaya daripada menyisipkan
-  // satu baris yang nanti ketahuan kembar.
-  assert.deepEqual(pendingSudahDibukukan([final()], [final()], '0071234567'), []);
+test('KAIDAH: baris tanpa saldo tidak pernah dilewati', () => {
+  // Tanpa saldo penahannya hilang, dan dua transfer sungguhan yang mirip bisa
+  // saling menghapus.
+  assert.deepEqual(sudahTersimpan([final({ saldo: null })], [barisBaru({ saldo: null })], '0071234567'), []);
 });
 
-test('dua baris tersimpan yang sama persis membuat penyaringnya mengalah', () => {
+test('KAIDAH: baris tanpa nominal tidak pernah dilewati', () => {
+  // Baris bernominal nol bukan uang melainkan sisa kop yang lolos penguraian;
+  // dua di antaranya bisa tampak sama persis tanpa benar-benar transaksi sama.
+  const kosong = { tanggal: '2026-04-01', keterangan: '', debit: 0, kredit: 0, saldo: 1190800 };
+  assert.deepEqual(sudahTersimpan([kosong], [{ ...kosong }], '0072890271'), []);
+});
+
+test('KAIDAH: dua kandidat tersimpan yang sama persis membuat penyaringnya mengalah', () => {
   // Kalau tidak bisa dipastikan yang mana, barisnya tetap disisipkan dan
-  // kembarnya terlihat — bukan dibuang diam-diam.
-  const baruPend = { tanggal: null, keterangan: pend().keterangan, debit: 700000, kredit: 0, saldo: 12892305 };
+  // kembarnya terlihat — melewatkan transaksi sungguhan jauh lebih berbahaya.
   assert.deepEqual(
-    pendingSudahDibukukan([final(), final({ tanggal: '2026-09-05' })], [baruPend], '0071234567'),
+    sudahTersimpan([final(), final({ keterangan: 'BIF TRANSFER KE 008 HERMANSYAH KBB' })],
+      [barisBaru()], '0071234567'),
     []
   );
 });
 
-test('SKENARIO: PEND dan versi bukunya datang dalam satu berkas yang sama', async () => {
-  const hasil = await bacaRekeningKoran(berkas('bca-mutasi-gabungan-pend.pdf'), 'gabungan.pdf');
-  const dilewati = pendingSudahDibukukan(
-    hasil.transaksi.filter((t) => t.tanggal),
-    hasil.transaksi.filter((t) => !t.tanggal),
-    hasil.noRekening
+test('rekening berbeda tidak pernah dilewati', () => {
+  assert.deepEqual(
+    sudahTersimpan([final({ no_rekening: '0079999999' })], [barisBaru()], '0071234567'),
+    []
   );
-  assert.equal(dilewati.length, 1);
-  assert.equal(dilewati[0].debit, 700000);
+});
+
+// --- Terhadap berkas sungguhan ----------------------------------------------
+
+test('SKENARIO: mutasi harian lalu e-statement, kalimatnya berbeda', async () => {
+  const mutasi = await bacaRekeningKoran(berkas('lintas-mutasi.pdf'), 'mutasi.pdf');
+  const est = await bacaRekeningKoran(berkas('lintas-estatement.pdf'), 'est.pdf');
+
+  const tersimpan = mutasi.transaksi.map((t, i) => ({ ...t, id: `x${i}`, no_rekening: mutasi.noRekening }));
+
+  // Dua baris PEND dilunasi oleh versi bertanggalnya di e-statement.
+  const { promosi, ragu } = cocokkanPending(tersimpan, est.transaksi, est.noRekening);
+  assert.equal(promosi.length, 2, 'kedua baris PEND terpasangkan');
+  assert.deepEqual(ragu, []);
+
+  // Dua baris yang sudah bertanggal dikenali sebagai transaksi yang sama.
+  const dilewati = sudahTersimpan(tersimpan, est.transaksi, est.noRekening);
+  assert.equal(dilewati.length, 2, 'dua baris bertanggal dikenali sudah ada');
+});
+
+test('SKENARIO: berkas yang tidak beririsan tidak kehilangan satu baris pun', async () => {
+  // Penjaga arah sebaliknya. Penyaring yang terlalu rajin akan membuang
+  // transaksi sungguhan, dan itu jauh lebih berbahaya daripada satu baris
+  // kembar yang terlihat.
+  const a = await bacaRekeningKoran(berkas('bca-mutasi-harian.pdf'), 'a.pdf');
+  const b = await bacaRekeningKoran(berkas('bca-mutasi-lanjutan.pdf'), 'b.pdf');
+  const tersimpan = a.transaksi.filter((t) => t.tanggal).map((t, i) => ({ ...t, id: `y${i}`, no_rekening: a.noRekening }));
+  assert.deepEqual(sudahTersimpan(tersimpan, b.transaksi, b.noRekening), []);
 });

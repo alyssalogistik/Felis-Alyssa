@@ -247,6 +247,27 @@ test('nomor rujukan ditarik dari keterangan', () => {
   assert.equal(referensiMutasi('BI-FAST DB TRANSFER KE 002 RUDI KBB'), null);
 });
 
+test('e-statement dan Mutasi menuliskan transaksi yang sama dengan kalimat berbeda', async () => {
+  // Bukan dugaan: inilah yang membuat sidik jari di database tidak bisa
+  // menahan transaksi ganda antarformat, dan sebab itu penyaringnya ada di
+  // aplikasi. Berkas contoh ini meniru perbedaannya persis.
+  const mutasi = await baca('lintas-mutasi.pdf');
+  const est = await baca('lintas-estatement.pdf');
+
+  assert.equal(mutasi.noRekening, est.noRekening, 'rekeningnya sama');
+  assert.equal(
+    mutasi.transaksi.reduce((s, t) => s + t.debit, 0),
+    est.transaksi.reduce((s, t) => s + t.debit, 0),
+    'uang yang sama'
+  );
+
+  const ketMutasi = mutasi.transaksi.find((t) => t.debit === 1000000).keterangan;
+  const ketEst = est.transaksi.find((t) => t.debit === 1000000).keterangan;
+  assert.notEqual(ketMutasi, ketEst, 'kalimatnya memang berbeda');
+  assert.match(ketMutasi, /^BI-FAST DB /);
+  assert.match(ketEst, /^BIF /);
+});
+
 test('SKENARIO: satu PDF memuat baris PEND sekaligus cetakan yang membukukannya', async () => {
   // Berkas gabungan seperti ini yang paling mudah membuat satu transfer
   // terhitung dua kali: baris PEND dan versi bertanggalnya masuk bersamaan
