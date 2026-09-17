@@ -39,10 +39,27 @@ function lencanaRekon(t) {
   return `<span class="lencana l-${aman(t.status_rekon)}">${aman(LABEL_REKON[t.status_rekon] ?? t.status_rekon)}</span>`;
 }
 
+/**
+ * Transaksi yang belum dibukukan BCA.
+ *
+ * Kolom tanggalnya kosong dengan sengaja — BCA sendiri belum menetapkannya —
+ * dan tanda hubung polos di kolom itu terbaca seperti data yang rusak. Yang
+ * ditampilkan sebabnya, supaya jelas uangnya sudah keluar dan tinggal menunggu
+ * tanggal bukunya.
+ */
+const PENANDA_PENDING = 'Belum dibukukan BCA (PEND).';
+
+function selTanggal(t) {
+  if (t.tanggal) return aman(formatTanggalPolos(t.tanggal));
+  return (t.masalah ?? []).includes(PENANDA_PENDING)
+    ? '<span class="lencana l-periksa" title="Sudah keluar dari rekening, tanggal bukunya belum ditetapkan BCA">PEND</span>'
+    : '<span class="nol">-</span>';
+}
+
 function barisTabel(t) {
   return `
     <tr data-id="${aman(t.id)}">
-      <td>${aman(formatTanggalPolos(t.tanggal))}</td>
+      <td>${selTanggal(t)}</td>
       <td class="keterangan" data-detail title="${aman(t.keterangan)}">${aman(t.keterangan)}</td>
       <td class="angka-kolom">${formatNominal(t.debit)}</td>
       <td class="angka-kolom">${formatNominal(t.kredit)}</td>
@@ -145,10 +162,33 @@ async function unggahBerkas(berkas) {
     if (r.duplikat > 0) catatan.push(`${r.duplikat} duplikat`);
     if (r.tanggal_ambigu > 0) catatan.push(`${r.tanggal_ambigu} tanggal ambigu`);
     if (isi.pernah_diunggah) catatan.push('berkas ini pernah diunggah sebelumnya');
+    if (isi.pending > 0) catatan.push(`${isi.pending} belum dibukukan BCA (PEND)`);
+    if (isi.pelunasan_pending?.dilunasi > 0) {
+      catatan.push(`${isi.pelunasan_pending.dilunasi} transaksi PEND kini bertanggal`);
+    }
+    if (isi.pelunasan_pending?.ragu?.length > 0) {
+      catatan.push(`${isi.pelunasan_pending.ragu.length} PEND perlu diperiksa manual`);
+    }
 
-    tampilkan('berhasil',
+    const ringkas =
       `${r.total} transaksi terbaca dari sheet "${isi.sheet}". ${r.valid} valid` +
-      (catatan.length > 0 ? ` — ${catatan.join(', ')}.` : '.'));
+      (catatan.length > 0 ? ` — ${catatan.join(', ')}.` : '.');
+
+    // Irisan periode tidak menggagalkan unggahan; ia hanya perlu terlihat.
+    // E-statement bulanan dan Mutasi Rekening harian menuliskan transaksi yang
+    // sama dengan kalimat yang berbeda, sehingga sidik jarinya pun berbeda dan
+    // penjaga duplikat tidak bisa menahannya. Yang bisa dilakukan hanya
+    // menyebutkannya — irisan yang wajar memang ada.
+    if (isi.irisan_periode) {
+      const { mulai, selesai, transaksi_tersimpan: jumlah } = isi.irisan_periode;
+      tampilkan('peringatan', `${ringkas} Perhatian: rentang ` +
+        `${formatTanggalPolos(mulai)} – ${formatTanggalPolos(selesai)} beririsan dengan ` +
+        `${jumlah} transaksi yang sudah tersimpan. Kalau sebagian di antaranya berasal ` +
+        `dari cetakan BCA yang berbeda, transaksi yang sama bisa tercatat dua kali — ` +
+        `periksa daftar di bawah pada rentang itu.`);
+    } else {
+      tampilkan('berhasil', ringkas);
+    }
 
     await muatStatusUnggahan();
     await muatTransaksi();

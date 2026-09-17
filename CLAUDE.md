@@ -154,6 +154,101 @@ adalah pustaka hulunya sendiri dan tidak menambah satu pun peringatan baru pada
 `npm audit`. Impornya ditunda sampai benar-benar ada PDF yang dibaca, supaya
 unggahan xlsx tidak menanggung biayanya.
 
+## Dua cetakan BCA, satu jalur penyimpanan
+
+BCA mengeluarkan rekening koran dalam dua tata letak yang sama sekali berbeda,
+dan keduanya didukung:
+
+| | E-statement bulanan | Mutasi Rekening |
+|---|---|---|
+| Asal | myBCA / KlikBCA, per bulan | KlikBCA, per rentang tanggal |
+| Judul kolom | TANGGAL KETERANGAN CBG MUTASI SALDO | Tgl Keterangan Cabang Jumlah Saldo |
+| Tanggal | DD/MM, tahunnya dari baris PERIODE | DD/MM/YYYY penuh |
+| Sambungan keterangan | selalu di bawah baris berangka | di atas **dan** di bawah |
+| Penafsir | `bca.js` | `bca-mutasi.js` |
+
+Judul kolomnya tidak beririsan satu huruf pun, jadi keduanya tidak bisa
+tertukar. `baca.js` memeriksa e-statement lebih dulu: itu format yang sudah
+bertahun-tahun masuk ke database ini, dan kalau suatu saat pengenalannya
+bertabrakan, yang menang harus jalur yang lama.
+
+Yang bercabang hanya pembacaan berkasnya. Keduanya mengeluarkan tabel bersama
+baris header dan bertemu kembali di `uraiTabel()` yang sama, sehingga validasi,
+penandaan duplikat, dan penomoran `kembar_ke` tetap hanya ada satu tempat.
+
+Tiga hal yang mudah rusak kalau `bca-mutasi.js` disunting:
+
+- **Satu transaksi ditentukan dari baris berangkanya, bukan dari baris
+  bertanggal.** Setiap transaksi punya tepat satu baris yang memuat nominal
+  berpenanda DB/CR di kolom Jumlah — termasuk transaksi PEND yang tidak punya
+  tanggal dan transaksi yang baris berangkanya tidak memuat keterangan sama
+  sekali. Menghitung dari tanggal akan kehilangan keduanya.
+- **Keterangan dipotong di jarak tegak terbesar, dan dipotong SEKALI.** Baris
+  keterangan berada di atas dan di bawah baris berangkanya; satu-satunya
+  pemisah antartransaksi adalah jarak tegak, yang lebih renggang daripada jarak
+  di dalam satu transaksi. Menghitungnya dua kali — sekali dari sisi atas,
+  sekali dari sisi bawah — bisa menghasilkan dua jawaban berbeda, dan satu baris
+  nama supplier bisa hilang atau terhitung pada dua transaksi sekaligus. Yang
+  dibandingkan perbandingan antarjarak di dalam berkas itu sendiri, bukan angka
+  tetap dalam poin: ukuran huruf cetakan bisa berubah, urutan rapat-renggangnya
+  tidak.
+- **Kop dan tombol halaman web disaring, bukan diabaikan.** Cetakan ini berasal
+  dari halaman web, sehingga "Format Download", "csv", "Sebelumnya", "Cetak",
+  dan baris hak cipta ikut tercetak ke PDF-nya. Semuanya ada di `BUKAN_TRANSAKSI`.
+
+Beberapa cetakan boleh disatukan menjadi satu PDF. Kop dibaca dari setiap
+halaman, bukan dari 60 potong teks pertama saja, sehingga rentang yang
+dilaporkan mencakup seluruh isinya. Dua nomor rekening berbeda dalam satu berkas
+ditolak — sidik jari transaksi akan tersandera nomor yang salah, dan salahnya
+tidak menimbulkan gejala apa pun.
+
+### Transaksi PEND
+
+Cetakan Mutasi menuliskan `PEND` di kolom tanggal untuk transaksi yang uangnya
+sudah keluar tetapi tanggal bukunya belum ditetapkan BCA. **Tanggalnya disimpan
+kosong, tidak pernah dikarang** — tanggal yang salah tidak menimbulkan galat apa
+pun dan baru ketahuan saat angka auditnya dipakai. Nominalnya tetap dihitung,
+karena total di kaki cetakan BCA sendiri sudah memuatnya.
+
+Penandanya menumpang kolom `masalah` yang memang sudah ada dan sudah
+ditampilkan, sehingga tidak menuntut migration untuk satu penanda.
+
+Baris tanpa tanggal diurutkan **paling atas**, bukan paling bawah. PEND adalah
+pergerakan paling baru di rekening; di bawah, ia terkubur di ujung daftar ribuan
+baris — bahkan bisa jatuh di luar `BATAS_MUATAN` — sehingga auditor yang bertanya
+"supplier ini sudah saya transfer belum" melihat daftar yang tampak lengkap
+padahal transfer terbarunya tidak ikut termuat.
+
+Saat mutasi berikutnya membukukan transaksi itu, `src/rekonsiliasi/pending.js`
+mencocokkannya dan **tanggal baris yang sudah ada yang diisi** — bukan baris baru
+yang ditambahkan. Sidik jarinya lalu menjadi sama persis dengan transaksi baru
+itu, sehingga yang baru tertolak indeks unik sebagai duplikat: satu baris, bukan
+dua. Urutannya menentukan hasilnya; pelunasan harus berjalan **sebelum**
+penyisipan.
+
+Arah kebalikannya ikut ditangani: berkas lama yang diunggah lagi membawa versi
+PEND dari transaksi yang sudah dibukukan, dan sidik jari tidak menahannya karena
+yang satu bertanggal dan yang satu tidak. Baris seperti itu dilewati saat
+penyisipan — tidak ada baris tersimpan yang disentuh.
+
+Pencocokannya sengaja pelit: hanya yang cocok dengan **tepat satu** kandidat di
+kedua sisi. Saldo berjalan ikut dibandingkan, karena itulah satu-satunya nilai
+yang membedakan dua transfer bernominal sama ke penerima sama pada hari yang
+sama. Yang meragukan dilaporkan untuk diperiksa mata, tidak pernah ditebak.
+
+### Irisan antarformat tidak bisa ditahan sidik jari
+
+E-statement bulanan dan Mutasi Rekening menuliskan transaksi yang sama dengan
+kalimat yang berbeda, sehingga `sidik`-nya pun berbeda. Mengunggah e-statement
+September setelah mutasi harian 1–16 September **akan** memasukkan transaksi yang
+sama untuk kedua kalinya, dan tidak ada penjaga duplikat yang bisa menahannya.
+
+Yang bisa dilakukan menyebutkannya: setiap unggahan melaporkan berapa transaksi
+tersimpan yang tanggalnya jatuh di dalam rentang berkas itu, dan layar
+menampilkannya sebagai peringatan. **Bukan penolakan** — irisan yang wajar memang
+ada, dan menolak berkas yang sah jauh lebih mengganggu daripada satu peringatan
+yang dibaca sekilas.
+
 ## Impor rekening koran bulanan
 
 Satu batch: maksimal dua belas berkas dan maksimal rentang dua belas bulan.
