@@ -12,6 +12,7 @@ import { BATAS_UKURAN } from './baca.js';
 import { GalatFormat } from './parser.js';
 import { bacaTagihan, ringkasTagihan } from './tagihan.js';
 import { cocokkan, ringkasAudit, STATUS } from './pencocokan.js';
+import { kodeEntitas, labelEntitas, saringanEntitas } from './entitas.js';
 
 const db = createAdminClient();
 
@@ -44,6 +45,16 @@ api.post(
     try {
       namaBerkas = decodeURIComponent(req.get('X-Nama-Berkas') ?? '') || namaBerkas;
     } catch { /* nama bawaan sudah cukup */ }
+
+    // Tagihan pun milik salah satu perusahaan. Tanpa penandanya, satu daftar
+    // tagihan akan dicocokkan terhadap transfer perusahaan mana pun.
+    const entitas = entitasWajib(req);
+    if (entitas === null) {
+      return res.status(400).json({
+        pesan: 'Pilih dulu tagihan ini milik siapa: PT Alyssa Auto Logistik atau CV Alyssa Trans Utama.',
+        kode: 'entitas_wajib',
+      });
+    }
 
     let hasil;
     try {
@@ -84,6 +95,7 @@ api.post(
       pph: t.pph,
       keterangan: t.keterangan,
       berkas_sumber: t.berkas_sumber,
+      entitas,
     }));
 
     // Invoice yang sama diunggah ulang diperbarui, bukan digandakan.
@@ -91,13 +103,17 @@ api.post(
     for (let i = 0; i < baris.length; i += UKURAN_BATCH) {
       const { data, error } = await db
         .from('tagihan_pemasok')
-        .upsert(baris.slice(i, i + UKURAN_BATCH), { onConflict: 'pemasok_id,no_invoice' })
+        // Nomor invoice hanya unik di dalam satu entitas: kedua perusahaan bisa
+        // menerima invoice bernomor sama dari supplier yang sama.
+        .upsert(baris.slice(i, i + UKURAN_BATCH), { onConflict: 'entitas,pemasok_id,no_invoice' })
         .select('id');
       if (error) throw error;
       tersimpan += data?.length ?? 0;
     }
 
     res.status(201).json({
+      entitas,
+      entitas_label: labelEntitas(entitas),
       sheet: hasil.sheet,
       kolom_terdeteksi: Object.keys(hasil.peta),
       ringkasan: ringkasTagihan(hasil.tagihan),
@@ -122,9 +138,25 @@ api.post('/jalankan', jalur(async (req, res) => {
     if (Number.isFinite(n) && n >= 0) opsi[kunci] = n;
   }
 
+  // Pencocokan WAJIB menyebut entitas, tidak boleh "semua".
+  //
+  // Satu tagihan hanya boleh berpasangan dengan satu transaksi, dan pasangan
+  // itu tersimpan permanen. Menjalankan audit lintas entitas akan memasangkan
+  // tagihan PT dengan transfer CV, lalu pasangan yang salah itu menempel di
+  // database — tagihan PT tampak lunas padahal yang membayar perusahaan lain,
+  // dan tagihan yang sebenarnya belum dibayar hilang dari daftar menyimpang.
+  const entitas = entitasWajib(req) ?? kodeEntitas(req.body?.entitas);
+  if (entitas === null) {
+    return res.status(400).json({
+      pesan: 'Pilih dulu audit ini untuk rekening siapa: PT Alyssa Auto Logistik atau CV Alyssa Trans Utama.',
+      kode: 'entitas_wajib',
+    });
+  }
+
   const { data: tagihan, error: galatTagihan } = await db
     .from('tagihan_pemasok')
     .select('id, no_invoice, tanggal_invoice, gross, pph, pemasok_id, pemasok(nama)')
+    .eq('entitas', entitas)
     .order('tanggal_invoice', { ascending: true })
     .limit(BATAS_AUDIT);
   if (galatTagihan) throw galatTagihan;
@@ -132,6 +164,7 @@ api.post('/jalankan', jalur(async (req, res) => {
   const { data: transaksi, error: galatTransaksi } = await db
     .from('transaksi_bank')
     .select('id, tanggal, keterangan, debit, kredit')
+    .eq('entitas', entitas)
     .gt('debit', 0)
     .order('tanggal', { ascending: true })
     .limit(BATAS_AUDIT);
@@ -225,7 +258,25 @@ function kriteriaAudit(query) {
     // "hanya yang bermasalah" adalah tampilan bawaan audit: yang sudah cocok
     // tidak perlu dilihat satu per satu.
     hanya_selisih: query.hanya_selisih === '1' || query.hanya_selisih === 'true',
+    // null berarti seluruh entitas; nilai yang tidak dikenali ditolak di
+    // endpoint, bukan diam-diam berarti "semua".
+    entitas: saringanEntitas(query.entitas).kode,
   };
+}
+
+/** Entitas pemilik rekening, wajib saat menyimpan. Tanpa nilai bawaan. */
+function entitasWajib(req) {
+  let mentah = req.get('X-Entitas') ?? req.query.entitas ?? '';
+  try {
+    mentah = decodeURIComponent(mentah);
+  } catch { /* header cacat sama saja dengan tidak dikirim */ }
+  return kodeEntitas(mentah);
+}
+
+function entitasDitolak(query) {
+  return saringanEntitas(query.entitas).ok
+    ? null
+    : `Entitas "${String(query.entitas)}" tidak dikenali.`;
 }
 
 function terapkanAudit(query, k) {
@@ -238,10 +289,15 @@ function terapkanAudit(query, k) {
   if (k.sampai) query = query.lte('tanggal_invoice', k.sampai);
   if (k.status) query = query.eq('status', k.status);
   if (k.hanya_selisih) query = query.neq('status', STATUS.MATCH);
+  // Tagihan PT tidak boleh tampak lunas karena dibayar dari rekening CV.
+  if (k.entitas) query = query.eq('entitas', k.entitas);
   return query;
 }
 
 api.get('/hasil', jalur(async (req, res) => {
+  const salah = entitasDitolak(req.query);
+  if (salah) return res.status(400).json({ pesan: salah });
+
   const k = kriteriaAudit(req.query);
   const batas = Math.min(Math.max(Number(req.query.batas) || 50, 1), 200);
   const mulai = Math.max(Number(req.query.mulai) || 0, 0);
@@ -262,6 +318,7 @@ api.get('/hasil', jalur(async (req, res) => {
     p_dari: k.dari || null,
     p_sampai: k.sampai || null,
     p_status: k.status || null,
+    p_entitas: k.entitas,
   });
   if (galatRingkasan) throw galatRingkasan;
 
@@ -272,12 +329,18 @@ api.get('/hasil', jalur(async (req, res) => {
 }));
 
 /** Uang keluar yang tidak terhubung tagihan mana pun. */
-api.get('/tanpa-tagihan', jalur(async (_req, res) => {
-  const { data, error } = await db
+api.get('/tanpa-tagihan', jalur(async (req, res) => {
+  const salah = entitasDitolak(req.query);
+  if (salah) return res.status(400).json({ pesan: salah });
+  const entitas = saringanEntitas(req.query.entitas).kode;
+
+  let query = db
     .from('kecocokan')
-    .select('id, status, alasan, transaksi_bank(id, tanggal, keterangan, debit)')
-    .eq('status', STATUS.TRANSFER_TANPA_INVOICE)
-    .limit(200);
+    .select('id, status, alasan, transaksi_bank!inner(id, tanggal, keterangan, debit, entitas)')
+    .eq('status', STATUS.TRANSFER_TANPA_INVOICE);
+  if (entitas) query = query.eq('transaksi_bank.entitas', entitas);
+
+  const { data, error } = await query.limit(200);
   if (error) throw error;
   res.json({ data });
 }));

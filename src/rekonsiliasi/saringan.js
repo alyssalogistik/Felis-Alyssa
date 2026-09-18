@@ -6,7 +6,7 @@
 
 /** Semua kriteria yang terisi harus terpenuhi sekaligus, bukan salah satu. */
 export function saring(transaksi, kriteria = {}) {
-  const { cari, bulan, tahun, dari, sampai, hanya_debit: hanyaDebit } = kriteria;
+  const { cari, bulan, tahun, dari, sampai, hanya_debit: hanyaDebit, entitas } = kriteria;
 
   // Spasi ganda dirapatkan, bukan hanya dipangkas di ujung: pencocokannya
   // harfiah, sehingga "SUGENG  RIYANTO" berspasi dua tidak akan pernah cocok
@@ -16,6 +16,11 @@ export function saring(transaksi, kriteria = {}) {
   const tahunAngka = tahun === '' || tahun === null || tahun === undefined ? null : Number(tahun);
 
   return transaksi.filter((t) => {
+    // Pemisahan pemilik rekening, disaring paling dulu: seluruh kriteria lain
+    // tidak ada artinya kalau yang tersaring transaksi perusahaan yang salah.
+    // Kosong berarti seluruh entitas.
+    if (entitas && t.entitas !== entitas) return false;
+
     // Pencarian mengabaikan besar-kecil huruf dan mencocokkan sebagian teks,
     // supaya "trio putra" menemukan "PT TRIO PUTRA TRANS MANDIRI".
     if (kata !== '') {

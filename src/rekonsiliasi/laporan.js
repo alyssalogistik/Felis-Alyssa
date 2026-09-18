@@ -5,6 +5,8 @@
 // salah — pembungkusan keterangan dan pemenggalan halaman — bisa diuji tanpa
 // membuat satu PDF pun.
 
+import { labelEntitas } from './entitas.js';
+
 /** Titik (pt) A4 potret. 1 pt = 1/72 inci. */
 export const A4 = { lebar: 595.28, tinggi: 841.89 };
 export const MARGIN = 34;
@@ -68,6 +70,10 @@ export function tanggalPendek(iso) {
  */
 export function keteranganFilter(kriteria = {}) {
   return [
+    // Entitas ditaruh paling atas karena ia yang paling menentukan arti
+    // seluruh angka di bawahnya. Laporan tanpa penyebutan pemilik rekening
+    // bisa terbaca seolah seluruh perusahaan, padahal isinya satu saja.
+    ['Rekening', kriteria.entitas ? labelEntitas(kriteria.entitas) : 'Semua entitas'],
     ['Kata Kunci', kriteria.cari ? kriteria.cari : 'Semua transaksi'],
     ['Bulan', kriteria.bulan ? NAMA_BULAN[Number(kriteria.bulan) - 1] ?? String(kriteria.bulan) : 'Semua'],
     ['Tahun', kriteria.tahun ? String(kriteria.tahun) : 'Semua'],
@@ -89,7 +95,12 @@ export function namaBerkas(kriteria = {}, sekarang = new Date()) {
   const bulan = kriteria.bulan ? NAMA_BULAN[Number(kriteria.bulan) - 1] ?? kriteria.bulan : 'Semua-Bulan';
   const tahun = kriteria.tahun ? String(kriteria.tahun) : String(sekarang.getFullYear());
 
-  return `Audit-Pembayaran-${supplier}-${bulan}-${tahun}.pdf`;
+  // Entitas masuk ke nama berkasnya. Dua laporan supplier yang sama dari dua
+  // perusahaan akan bernama sama persis di folder unduhan, dan yang terunduh
+  // belakangan menimpa yang pertama tanpa peringatan.
+  const rekening = kriteria.entitas ? `-${kriteria.entitas.startsWith('CV') ? 'CV' : 'PT'}` : '';
+
+  return `Audit-Pembayaran${rekening}-${supplier}-${bulan}-${tahun}.pdf`;
 }
 
 /**

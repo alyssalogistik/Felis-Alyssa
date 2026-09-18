@@ -15,6 +15,7 @@ import { idUnggahanValid, periksaHapus, rincianHapus } from './hapus.js';
 import { saringPembayaran, saringPerubahan } from './pembayaran.js';
 import { cariKembar, peringatanSumber, perluKonfirmasi } from './kembar-bayar.js';
 import { cocokkanPending, sudahTersimpan } from './pending.js';
+import { kodeEntitas, labelEntitas, saringanEntitas } from './entitas.js';
 import audit from './audit.js';
 
 const db = createAdminClient();
@@ -42,7 +43,7 @@ const TABEL_TAMPIL = 'transaksi_bank_unik';
 const KOLOM_TRANSAKSI =
   'id, unggahan_id, baris_sumber, berkas_sumber, tanggal, tanggal_ambigu, keterangan, ' +
   'debit, kredit, saldo, referensi, status_data, masalah, duplikat, status_rekon, ' +
-  'referensi_rekon, catatan_rekon, nominal_pembanding, selisih, direkon_pada, direkon_oleh';
+  'referensi_rekon, catatan_rekon, nominal_pembanding, selisih, direkon_pada, direkon_oleh, entitas';
 
 /**
  * Tampilan gabungan: rekening koran ditambah pembayaran manual.
@@ -107,7 +108,24 @@ function kriteriaDari(query) {
     // bayar belum", dan jawabannya hanya ada di uang keluar. Uang masuk yang
     // kebetulan menyebut nama yang sama justru menyesatkan.
     hanya_debit: query.hanya_debit === '1' || query.hanya_debit === 'true',
+    // null berarti seluruh entitas. Nilai yang tidak dikenali BUKAN null —
+    // lihat entitasDari() di bawah, yang menolaknya alih-alih diam-diam
+    // menampilkan transaksi perusahaan lain.
+    entitas: saringanEntitas(query.entitas).kode,
   };
+}
+
+/**
+ * Pilihan entitas pada penyaringan, atau pesan galat bila tidak dikenali.
+ *
+ * Dipisah dari kriteriaDari() supaya endpoint bisa menolak dengan 400. Nilai
+ * asing yang diam-diam berarti "semua" akan memunculkan transaksi perusahaan
+ * lain tanpa gejala apa pun — justru yang seluruh pemisahan ini cegah.
+ */
+function entitasDitolak(query) {
+  return saringanEntitas(query.entitas).ok
+    ? null
+    : `Entitas "${String(query.entitas)}" tidak dikenali.`;
 }
 
 /**
@@ -119,7 +137,7 @@ function kriteriaDari(query) {
  * ringkasan_transaksi_bank() supaya daftar dan ringkasan tidak pernah
  * menghitung himpunan yang berbeda.
  */
-function terapkanKriteria(query, { cari, bulan, tahun, dari, sampai, hanya_debit }) {
+function terapkanKriteria(query, { cari, bulan, tahun, dari, sampai, hanya_debit, entitas }) {
   if (cari) {
     const pola = kutip(`%${cari}%`);
     query = query.or(`keterangan.ilike.${pola},referensi.ilike.${pola}`);
@@ -129,6 +147,10 @@ function terapkanKriteria(query, { cari, bulan, tahun, dari, sampai, hanya_debit
   if (dari) query = query.gte('tanggal', dari);
   if (sampai) query = query.lte('tanggal', sampai);
   if (hanya_debit) query = query.gt('debit', 0);
+  // Pemisahan pemilik rekening. Tanpa ini, mencari SUGENG RIYANTO dari
+  // rekening CV memunculkan transfer PT juga, dan yang tampak sudah dibayar
+  // sebenarnya dibayar oleh perusahaan yang lain.
+  if (entitas) query = query.eq('entitas', entitas);
   return query;
 }
 
@@ -154,6 +176,16 @@ api.post(
       // Header cacat bukan alasan menggagalkan unggahan; nama bawaan sudah cukup.
     }
 
+    // Diperiksa SEBELUM berkasnya diurai: menolak sesudah penguraian hanya
+    // membuang waktu pemakainya untuk kesalahan yang sudah bisa diketahui.
+    const entitas = entitasUnggahan(req);
+    if (entitas === null) {
+      return res.status(400).json({
+        pesan: 'Pilih dulu rekening ini milik siapa: PT Alyssa Auto Logistik atau CV Alyssa Trans Utama.',
+        kode: 'entitas_wajib',
+      });
+    }
+
     let hasil;
     try {
       hasil = await bacaRekeningKoran(buffer, namaBerkas);
@@ -161,6 +193,9 @@ api.post(
       if (error instanceof GalatFormat) return res.status(422).json({ pesan: error.message });
       throw error;
     }
+
+    const bentrok = await entitasBentrok(hasil.noRekening, entitas);
+    if (bentrok) return res.status(409).json({ pesan: bentrok, kode: 'entitas_bentrok' });
 
     const hash = createHash('sha256').update(buffer).digest('hex');
     const ringkasan = ringkasValidasi(hasil.transaksi);
@@ -178,6 +213,7 @@ api.post(
       .insert({
         nama_berkas: namaBerkas,
         hash_berkas: hash,
+        entitas,
         sheet: hasil.sheet,
         no_rekening: hasil.noRekening ?? null,
         periode_bulan: hasil.periode?.bulan ?? null,
@@ -208,16 +244,16 @@ api.post(
     // dibandingkan, sehingga transaksi yang melunasinya lolos sebagai transaksi
     // baru — dan satu transfer tersimpan dua kali: sekali sebagai baris PEND
     // yang baru dilunasi, sekali sebagai baris dari cetakan yang melunasinya.
-    const pelunasan = await lunasiPending(hasil);
+    const pelunasan = await lunasiPending(hasil, entitas);
 
     // Transaksi yang sudah tersimpan dari cetakan BCA bentuk lain tidak
     // disisipkan ulang. Sidik jari tidak bisa menahannya: yang membedakannya
     // justru tanggal (kosong pada baris PEND) dan kalimat keterangannya.
-    const dariCetakanLain = new Set(await sudahAdaDariCetakanLain(hasil));
+    const dariCetakanLain = new Set(await sudahAdaDariCetakanLain(hasil, entitas));
 
     // Irisan periode dilaporkan sebagai peringatan, bukan penolakan: irisan yang
     // wajar memang ada, dan menolak berkas yang sah jauh lebih mengganggu.
-    const irisan = await irisanTersimpan(hasil);
+    const irisan = await irisanTersimpan(hasil, entitas);
 
     const baris = hasil.transaksi.filter((t) => !dariCetakanLain.has(t)).map((t) => ({
       unggahan_id: unggahan.id,
@@ -235,6 +271,7 @@ api.post(
       duplikat: t.duplikat,
       no_rekening: hasil.noRekening ?? null,
       kembar_ke: t.kembar_ke ?? 1,
+      entitas,
     }));
 
     // upsert dengan ignoreDuplicates menghasilkan ON CONFLICT DO NOTHING:
@@ -272,6 +309,8 @@ api.post(
       periode: hasil.periode ?? null,
       no_rekening: hasil.noRekening ?? null,
       status,
+      entitas,
+      entitas_label: labelEntitas(entitas),
       rentang: hasil.rentang ?? null,
       pending: hasil.pending ?? 0,
       pelunasan_pending: { ...pelunasan, sudah_dari_cetakan_lain: dariCetakanLain.size },
@@ -281,6 +320,51 @@ api.post(
     });
   })
 );
+
+/**
+ * Entitas pemilik rekening pada unggahan. WAJIB, tanpa nilai bawaan.
+ *
+ * Nilai bawaan yang diam-diam dipakai ketika pilihannya lupa dikirim akan
+ * menandai rekening koran CV sebagai milik PT. Kekeliruan itu tidak
+ * menimbulkan galat apa pun — baru ketahuan berbulan kemudian saat angka
+ * auditnya dipakai, dan saat itu tidak ada cara membedakan lagi baris mana
+ * yang salah tanda.
+ */
+function entitasUnggahan(req) {
+  let mentah = req.get('X-Entitas') ?? req.query.entitas ?? '';
+  try {
+    mentah = decodeURIComponent(mentah);
+  } catch {
+    // Header cacat diperlakukan seperti tidak dikirim sama sekali.
+  }
+  return kodeEntitas(mentah);
+}
+
+/**
+ * Nomor rekening ini sudah pernah tercatat milik entitas lain?
+ *
+ * Satu nomor rekening hanya milik satu perusahaan. Kalau pilihannya keliru,
+ * transaksi masuk dengan tanda yang salah dan bercampur di pencarian supplier
+ * tanpa satu pun gejala. Lebih baik menolak dan menyebutkan apa yang salah.
+ */
+async function entitasBentrok(noRekening, entitas) {
+  if (!noRekening) return null;
+
+  const { data, error } = await db
+    .from('transaksi_bank')
+    .select('entitas')
+    .eq('no_rekening', noRekening)
+    .neq('entitas', entitas)
+    .limit(1);
+  if (error) throw error;
+  if (!data || data.length === 0) return null;
+
+  return (
+    `Nomor rekening ${noRekening} sudah tercatat milik ` +
+    `${labelEntitas(data[0].entitas)}, bukan ${labelEntitas(entitas)}. ` +
+    'Periksa lagi pilihan "Rekening milik siapa?" sebelum mengunggah.'
+  );
+}
 
 /**
  * Isi tanggal baris PEND yang transaksinya kini muncul bertanggal.
@@ -294,17 +378,21 @@ api.post(
  * apa adanya supaya bisa diperiksa mata — menebak di sini berarti menempelkan
  * tanggal yang salah pada uang yang benar-benar keluar.
  */
-async function lunasiPending(hasil) {
+async function lunasiPending(hasil, entitas) {
   const kosong = { dilunasi: 0, ragu: [], bentrok: 0 };
 
   // Tanpa nomor rekening, baris PEND milik rekening lain bisa ikut tersasar.
   if (!hasil.noRekening) return kosong;
   if (!hasil.transaksi.some((t) => t.tanggal)) return kosong;
 
+  // Dibatasi pada entitas berkas ini. Transaksi PT dan CV yang kebetulan serupa
+  // adalah dua transaksi sungguhan; melunasi yang satu dengan yang lain akan
+  // menempelkan tanggal perusahaan lain pada uang yang benar-benar keluar.
   const { data: pending, error } = await db
     .from('transaksi_bank')
     .select('id, keterangan, debit, kredit, saldo, no_rekening, tanggal, masalah')
     .is('tanggal', null)
+    .eq('entitas', entitas)
     .eq('no_rekening', hasil.noRekening);
   if (error) throw error;
   if (!pending || pending.length === 0) return kosong;
@@ -312,7 +400,7 @@ async function lunasiPending(hasil) {
   // Nomor rekening belum menempel di hasil penguraian — ia dibaca dari kop,
   // bukan dari baris transaksi — sedangkan baris tersimpan menyimpannya per
   // baris. Tanpa disamakan di sini, tidak satu pun kunci akan pernah cocok.
-  const { promosi, ragu } = cocokkanPending(pending, hasil.transaksi, hasil.noRekening);
+  const { promosi, ragu } = cocokkanPending(pending, hasil.transaksi, hasil.noRekening, entitas);
 
   // Penanda PEND ikut dilepas saat tanggalnya terisi. Kalau ditinggalkan, baris
   // yang sudah dibukukan tetap terbaca "belum dibukukan" selamanya — dan
@@ -357,7 +445,7 @@ async function lunasiPending(hasil) {
  * ada baris tersimpan yang disentuh di sini: yang dilakukan hanya tidak
  * menambah baris baru.
  */
-async function sudahAdaDariCetakanLain(hasil) {
+async function sudahAdaDariCetakanLain(hasil, entitas) {
   if (!hasil.noRekening) return [];
 
   // Saldo berjalan sangat memilah, jadi dipakai menyempitkan kueri lebih dulu:
@@ -370,13 +458,14 @@ async function sudahAdaDariCetakanLain(hasil) {
     const { data, error } = await db
       .from('transaksi_bank')
       .select('keterangan, debit, kredit, saldo, no_rekening, tanggal')
+      .eq('entitas', entitas)
       .eq('no_rekening', hasil.noRekening)
       .in('saldo', saldo.slice(i, i + UKURAN_BATCH));
     if (error) throw error;
     tersimpan.push(...(data ?? []));
   }
 
-  const dariDatabase = sudahTersimpan(tersimpan, hasil.transaksi, hasil.noRekening);
+  const dariDatabase = sudahTersimpan(tersimpan, hasil.transaksi, hasil.noRekening, entitas);
 
   // Baris PEND dibandingkan juga dengan baris bertanggal DI DALAM berkas ini
   // sendiri. Satu PDF gabungan bisa memuat cetakan lama beserta baris PEND-nya
@@ -391,7 +480,8 @@ async function sudahAdaDariCetakanLain(hasil) {
   const dariBerkasIni = sudahTersimpan(
     hasil.transaksi.filter((t) => t.tanggal),
     hasil.transaksi.filter((t) => !t.tanggal),
-    hasil.noRekening
+    hasil.noRekening,
+    entitas
   );
 
   return [...new Set([...dariDatabase, ...dariBerkasIni])];
@@ -406,7 +496,7 @@ async function sudahAdaDariCetakanLain(hasil) {
  * cetakan menuliskan keterangan transaksi yang sama dengan kalimat yang berbeda,
  * sehingga sidik jarinya pun berbeda.
  */
-async function irisanTersimpan(hasil) {
+async function irisanTersimpan(hasil, entitas) {
   if (!hasil.noRekening) return null;
 
   const tanggal = hasil.transaksi.map((t) => t.tanggal).filter(Boolean).sort();
@@ -418,6 +508,7 @@ async function irisanTersimpan(hasil) {
   const { count, error } = await db
     .from('transaksi_bank')
     .select('id', { count: 'exact', head: true })
+    .eq('entitas', entitas)
     .eq('no_rekening', hasil.noRekening)
     .gte('tanggal', mulai)
     .lte('tanggal', selesai);
@@ -461,8 +552,18 @@ api.post(
       throw error;
     }
 
+    // Entitas tidak wajib di sini: langkah ini hanya membaca periode tanpa
+    // menyimpan apa pun. Tetapi bila dikirim, bentroknya diperiksa sekarang —
+    // lebih baik ketahuan sebelum dua belas berkas telanjur diimpor.
+    const entitasPeriksa = entitasUnggahan(req);
+    if (entitasPeriksa) {
+      const bentrok = await entitasBentrok(hasil.noRekening, entitasPeriksa);
+      if (bentrok) return res.status(409).json({ pesan: bentrok, kode: 'entitas_bentrok' });
+    }
+
     res.json({
       nama_berkas: namaBerkas,
+      entitas: entitasPeriksa,
       periode: hasil.periode ?? null,
       // Cetakan Mutasi Rekening berupa rentang tanggal yang boleh melewati
       // batas bulan; `periode` hanya memuat bulan awalnya.
@@ -477,7 +578,12 @@ api.post(
 // --- Periode yang datanya sudah ada di database -----------------------------
 
 api.get('/periode-tersimpan', jalur(async (_req, res) => {
-  const { data, error } = await db.rpc('periode_tersimpan');
+  const salah = entitasDitolak(_req.query);
+  if (salah) return res.status(400).json({ pesan: salah });
+
+  const { data, error } = await db.rpc('periode_tersimpan', {
+    p_entitas: saringanEntitas(_req.query.entitas).kode,
+  });
   if (error) throw error;
   res.json({ data: data ?? [] });
 }));
@@ -500,8 +606,12 @@ api.get('/periode-tersimpan', jalur(async (_req, res) => {
 const BATAS_PINDAI = 20000;
 const UKURAN_PINDAI = 1000;
 
-api.get('/supplier', jalur(async (_req, res) => {
+api.get('/supplier', jalur(async (req, res) => {
   const { daftarSupplier } = await import('./nama.js');
+
+  const salah = entitasDitolak(req.query);
+  if (salah) return res.status(400).json({ pesan: salah });
+  const entitas = saringanEntitas(req.query.entitas).kode;
 
   const baris = [];
   let lengkap = true;
@@ -510,10 +620,15 @@ api.get('/supplier', jalur(async (_req, res) => {
     // Membaca tampilan gabungan, bukan rekening koran saja: supplier yang
     // dibayar hanya lewat Mekari Pay tidak punya satu pun baris di e-statement
     // dan tidak akan pernah muncul di daftar kalau sumbernya dibatasi ke bank.
-    const { data, error } = await db
+    let pindai = db
       .from(TABEL_GABUNGAN)
       .select('keterangan, debit, tanggal, kredit')
-      .gt('debit', 0)
+      .gt('debit', 0);
+    // Daftar supplier disusun dari keterangan bank, jadi ia ikut tercampur
+    // antarperusahaan kalau tidak dibatasi di sini juga.
+    if (entitas) pindai = pindai.eq('entitas', entitas);
+
+    const { data, error } = await pindai
       .order('tanggal', { ascending: false, nullsFirst: true })
       .range(mulai, mulai + UKURAN_PINDAI - 1);
 
@@ -531,6 +646,12 @@ api.get('/supplier', jalur(async (_req, res) => {
 // --- Daftar transaksi + ringkasan ------------------------------------------
 
 api.get('/transaksi', jalur(async (req, res) => {
+  // Entitas asing DITOLAK, bukan diperlakukan sebagai "semua". Nilai yang
+  // diam-diam jatuh ke "semua" akan memunculkan transaksi perusahaan lain
+  // tanpa gejala apa pun.
+  const salahEntitas = entitasDitolak(req.query);
+  if (salahEntitas) return res.status(400).json({ pesan: salahEntitas });
+
   const kriteria = kriteriaDari(req.query);
   const sumber = sumberBaca(req.query);
   const batas = Math.min(Math.max(Number(req.query.batas) || 50, 1), 200);
@@ -569,6 +690,7 @@ api.get('/transaksi', jalur(async (req, res) => {
     p_tahun: kriteria.tahun,
     p_dari: kriteria.dari,
     p_sampai: kriteria.sampai,
+    p_entitas: kriteria.entitas,
   });
   if (galatRingkasan) throw galatRingkasan;
 
@@ -586,6 +708,7 @@ api.get('/transaksi', jalur(async (req, res) => {
       p_dari: kriteria.dari,
       p_sampai: kriteria.sampai,
       p_hanya_debit: kriteria.hanya_debit,
+      p_entitas: kriteria.entitas,
     });
     if (galatSumber) throw galatSumber;
     ringkasanSumber = perSumber ?? [];
@@ -799,6 +922,12 @@ api.delete('/unggahan/:id', jalur(async (req, res) => {
 // Layar hanya memuat satu halaman hasil; laporan harus memuat seluruh transaksi
 // yang cocok dengan filter, dan itu hanya bisa dijamin dari sisi ini.
 api.get('/cetak', jalur(async (req, res) => {
+  // Entitas asing DITOLAK, bukan diperlakukan sebagai "semua". Nilai yang
+  // diam-diam jatuh ke "semua" akan memunculkan transaksi perusahaan lain
+  // tanpa gejala apa pun.
+  const salahEntitas = entitasDitolak(req.query);
+  if (salahEntitas) return res.status(400).json({ pesan: salahEntitas });
+
   const kriteria = kriteriaDari(req.query);
 
   const sumber = sumberBaca(req.query);
@@ -827,6 +956,12 @@ api.get('/cetak', jalur(async (req, res) => {
 // --- Ekspor ----------------------------------------------------------------
 
 api.get('/ekspor', jalur(async (req, res) => {
+  // Entitas asing DITOLAK, bukan diperlakukan sebagai "semua". Nilai yang
+  // diam-diam jatuh ke "semua" akan memunculkan transaksi perusahaan lain
+  // tanpa gejala apa pun.
+  const salahEntitas = entitasDitolak(req.query);
+  if (salahEntitas) return res.status(400).json({ pesan: salahEntitas });
+
   const kriteria = kriteriaDari(req.query);
 
   const sumber = sumberBaca(req.query);
@@ -893,7 +1028,7 @@ api.get('/ekspor', jalur(async (req, res) => {
 
 const KOLOM_BAYAR =
   'id, tanggal, penerima, nominal, sumber, no_referensi, memo, bukti_url, ' +
-  'dibuat_pada, dibuat_oleh, diubah_pada, diubah_oleh';
+  'dibuat_pada, dibuat_oleh, diubah_pada, diubah_oleh, entitas';
 
 /** Baris pembanding untuk penjaga double count: rekening koran DAN manual. */
 async function barisPembanding({ tanggal, penerima }) {

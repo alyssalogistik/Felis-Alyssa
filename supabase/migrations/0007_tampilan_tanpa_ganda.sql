@@ -29,7 +29,20 @@
 -- berstatus "belum" padahal aslinya sudah direkon.
 -- ---------------------------------------------------------------------------
 
-create or replace view transaksi_bank_unik
+-- Dilepas dulu, bukan create or replace.
+--
+-- Migration berikutnya menambahkan kolom pada view ini, dan `create or replace
+-- view` tidak bisa MENGURANGI kolom. Tanpa pelepasan ini, menjalankan ulang
+-- setup-lengkap.sql pada database yang skemanya sudah lebih baru gagal dengan
+-- "cannot drop columns from view" — dan berkas itu harus tetap aman dijalankan
+-- berapa kali pun. Yang dilepas hanya view; tidak ada baris yang tersentuh.
+--
+-- pembayaran_semua ikut dilepas karena bergantung padanya; ia dipasang kembali
+-- oleh migration yang membuatnya.
+drop view if exists pembayaran_semua;
+drop view if exists transaksi_bank_unik;
+
+create view transaksi_bank_unik
 with (security_invoker = true) as
 with sidikkan as (
   select

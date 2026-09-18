@@ -9,6 +9,7 @@
 // Bank. Yang ditambahkan di sini hanya pengaturan urutan dan pelaporan.
 
 import { aman, ambil, el, kosong } from './bantuan.js';
+import { labelEntitas } from '/entitas.js';
 import { MAKS_BERKAS, namaPeriode, periksaBatch, ringkasBatch } from './batch.js';
 
 /**
@@ -34,12 +35,15 @@ function pesanImpor(kelas, teks) {
 }
 
 /** Satu berkas dikirim sebagai badan mentah, sama seperti unggahan tunggal. */
-async function kirim(jalur, berkas) {
+async function kirim(jalur, berkas, entitas) {
   const respons = await fetch(`/api/rekonsiliasi/${jalur}`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/octet-stream',
       'X-Nama-Berkas': encodeURIComponent(berkas.name),
+      // Pemilik rekening ikut di setiap langkah, termasuk pembacaan periode:
+      // bentroknya lebih baik ketahuan sebelum dua belas berkas telanjur masuk.
+      'X-Entitas': encodeURIComponent(entitas ?? ''),
     },
     body: berkas,
   });
@@ -116,7 +120,7 @@ export async function muatRiwayatImpor() {
         <table class="tabel">
           <thead>
             <tr>
-              <th>Periode</th><th>Berkas</th><th>Waktu</th>
+              <th>Rekening</th><th>Periode</th><th>Berkas</th><th>Waktu</th>
               <th class="angka-kolom">Dibaca</th>
               <th class="angka-kolom">Baru</th>
               <th class="angka-kolom">Duplikat</th>
@@ -128,6 +132,7 @@ export async function muatRiwayatImpor() {
           <tbody>
             ${data.map((u) => `
               <tr>
+                <td>${aman(labelEntitas(u.entitas))}</td>
                 <td>${aman(u.periode_bulan ? namaPeriode({ bulan: u.periode_bulan, tahun: u.periode_tahun }) : '-')}</td>
                 <td class="keterangan-sel">${aman(u.nama_berkas)}</td>
                 <td>${aman(new Date(u.diunggah_pada).toLocaleString('id-ID', { dateStyle: 'short', timeStyle: 'short' }))}</td>
@@ -301,7 +306,12 @@ export function pasangKendaliImpor(sesudah) {
  * akan meninggalkan sebagian bulan sudah masuk dan sebagian belum, dan tidak
  * ada cara sederhana bagi pemakainya untuk tahu sampai mana.
  */
-export async function imporBerkas(berkasTerpilih, sesudah) {
+export async function imporBerkas(berkasTerpilih, sesudah, entitas) {
+  if (!entitas) {
+    pesanImpor('gagal', 'Pilih dulu "Rekening milik siapa?" sebelum mengimpor.');
+    return;
+  }
+
   const daftar = [...berkasTerpilih];
   el('hasil-impor').innerHTML = '';
 
@@ -317,7 +327,7 @@ export async function imporBerkas(berkasTerpilih, sesudah) {
   const diperiksa = [];
   for (const berkas of daftar) {
     try {
-      const isi = await kirim('periode', berkas);
+      const isi = await kirim('periode', berkas, entitas);
       diperiksa.push({ berkas, nama: berkas.name, periode: isi.periode });
     } catch (error) {
       // Berkas yang tidak terbaca tetap masuk daftar supaya kegagalannya
@@ -348,7 +358,7 @@ export async function imporBerkas(berkasTerpilih, sesudah) {
     }
 
     try {
-      const isi = await kirim('unggah', item.berkas);
+      const isi = await kirim('unggah', item.berkas, entitas);
       hasil.push({
         judul,
         nama: item.nama,

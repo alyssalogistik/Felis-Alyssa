@@ -46,6 +46,7 @@ function isian() {
     memo: ambilNilai('memo'),
     bukti_url: ambilNilai('bukti_url'),
     dibuat_oleh: ambilNilai('dibuat_oleh'),
+    entitas: ambilNilai('entitas'),
   };
 }
 
@@ -189,6 +190,10 @@ async function mulaiSunting(id) {
     if (!b) return pesan('gagal', 'Pembayaran tidak ditemukan.');
 
     const f = el('form-bayar-manual');
+    // Entitas ikut diisi kembali. Kolomnya wajib, jadi tanpa ini formulir
+    // suntingan tidak bisa disimpan sama sekali — dan kalau kelak isinya
+    // dibiarkan kosong lalu tersimpan, pembayarannya berpindah perusahaan.
+    f.entitas.value = b.entitas ?? '';
     f.tanggal.value = b.tanggal;
     f.penerima.value = b.penerima;
     f.nominal.value = String(Number(b.nominal));

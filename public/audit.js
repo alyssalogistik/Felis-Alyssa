@@ -151,7 +151,7 @@ export async function muatStatusKoran() {
   }
 }
 
-async function unggahTagihan(berkas) {
+async function unggahTagihan(berkas, entitas) {
   const kotak = el('pesan-tagihan');
   const tampil = (kelas, teks) => {
     kotak.className = `pesan ${kelas}`;
@@ -166,6 +166,7 @@ async function unggahTagihan(berkas) {
       headers: {
         'Content-Type': 'application/octet-stream',
         'X-Nama-Berkas': encodeURIComponent(berkas.name),
+        'X-Entitas': encodeURIComponent(entitas ?? ''),
       },
       body: berkas,
     });
@@ -186,13 +187,28 @@ async function unggahTagihan(berkas) {
 async function jalankanAudit() {
   const kotak = el('pesan-audit');
   const tombol = el('jalankan-audit');
+
+  // Pencocokan tidak boleh lintas entitas: pasangan tagihan-transaksi tersimpan
+  // permanen, jadi satu pasangan yang salah menempel di database dan membuat
+  // tagihan PT tampak lunas oleh transfer CV.
+  const entitas = el('entitas-tagihan').value;
+  if (entitas === '') {
+    kotak.className = 'pesan peringatan';
+    kotak.textContent = 'Pilih dulu "Tagihan milik siapa?" sebelum menjalankan Auto-Match.';
+    kotak.hidden = false;
+    return;
+  }
+
   kotak.className = 'pesan';
   kotak.textContent = 'Mencocokkan tagihan dengan transaksi bank…';
   kotak.hidden = false;
   tombol.disabled = true;
 
   try {
-    const hasil = await ambil('/rekonsiliasi/audit/jalankan', { method: 'POST', body: '{}' });
+    const hasil = await ambil('/rekonsiliasi/audit/jalankan', {
+      method: 'POST',
+      body: JSON.stringify({ entitas }),
+    });
     const r = hasil.ringkasan;
     kotak.className = 'pesan berhasil';
     kotak.textContent =
@@ -266,13 +282,29 @@ export function pasangKendaliAudit() {
     ...Array.from({ length: 7 }, (_, i) => String(tahunIni + 1 - i)).map((t) => new Option(t, t))
   );
 
+  // Kotak berkas terkunci sampai pemilik rekening dipilih. Sama seperti di
+  // halaman Rekonsiliasi: menolak sesudah berkas telanjur dipilih membuat
+  // langkah ini terasa seperti galat, bukan bagian dari alurnya.
+  const kunci = (pilihan, masukan) => {
+    const setel = () => {
+      masukan.disabled = pilihan.value === '';
+      masukan.closest('.unggah')?.classList.toggle('terkunci', masukan.disabled);
+    };
+    pilihan.addEventListener('change', setel);
+    setel();
+  };
+  const entitasKoran = el('entitas-unggah-audit');
+  const entitasTagihan = el('entitas-tagihan');
+  kunci(entitasKoran, el('berkas-koran-audit'));
+  kunci(entitasTagihan, el('berkas-tagihan'));
+
   el('berkas-koran-audit').addEventListener('change', async (peristiwa) => {
     const berkas = [...(peristiwa.target.files ?? [])];
     peristiwa.target.value = '';
     if (berkas.length === 0) return;
     // Status jumlah transaksi diperbarui setelah seluruh batch selesai, bukan
     // per berkas: yang ingin diketahui adalah keadaan akhirnya.
-    await imporBerkas(berkas, muatStatusKoran);
+    await imporBerkas(berkas, muatStatusKoran, entitasKoran.value);
   });
 
   el('lipat-riwayat').addEventListener('toggle', (peristiwa) => {
@@ -281,7 +313,7 @@ export function pasangKendaliAudit() {
 
   el('berkas-tagihan').addEventListener('change', (peristiwa) => {
     const berkas = peristiwa.target.files?.[0];
-    if (berkas) unggahTagihan(berkas);
+    if (berkas) unggahTagihan(berkas, entitasTagihan.value);
     peristiwa.target.value = '';
   });
 

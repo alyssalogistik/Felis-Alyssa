@@ -85,7 +85,12 @@ export async function muatSupplier() {
   pesan('', '');
 
   try {
-    const { data, lengkap, dipindai } = await ambil('/rekonsiliasi/supplier');
+    // Daftar ini disusun dari keterangan bank, jadi ia ikut tercampur
+    // antarperusahaan kalau tidak mengikuti sumber rekening yang sedang
+    // dipilih di kotak pencarian di atasnya.
+    const entitas = el('cari-bayaran')?.elements?.entitas?.value ?? '';
+    const parameter = entitas ? `?entitas=${encodeURIComponent(entitas)}` : '';
+    const { data, lengkap, dipindai } = await ambil(`/rekonsiliasi/supplier${parameter}`);
     semua = data ?? [];
 
     if (semua.length === 0) {

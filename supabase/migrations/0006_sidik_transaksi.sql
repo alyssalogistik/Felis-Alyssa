@@ -47,23 +47,43 @@ alter table transaksi_bank
 -- periksa_transaksi_ganda() di bawah untuk melihatnya, lalu putuskan sendiri.
 -- ---------------------------------------------------------------------------
 
-update transaksi_bank t
-set kembar_ke = u.urutan
-from (
-  select id,
-         row_number() over (
-           partition by
-             coalesce(no_rekening, ''),
-             tanggal,
-             lower(regexp_replace(coalesce(keterangan, ''), '\s+', ' ', 'g')),
-             coalesce(debit, 0),
-             coalesce(kredit, 0),
-             lower(coalesce(referensi, ''))
-           order by dibuat_pada, id
-         ) as urutan
-  from transaksi_bank
-) u
-where t.id = u.id and t.kembar_ke is distinct from u.urutan;
+-- Penomoran ini SEKALI SAJA, saat kolom sidik belum ada.
+--
+-- Sesudah sidik berdiri, indeks uniknya diperiksa per baris selama UPDATE
+-- berjalan, bukan di akhir. Penomoran ulang yang menukar dua nomor — misalnya
+-- baris yang tadinya 1 menjadi 2 sementara pemilik nomor 2 belum sempat
+-- berpindah — bertabrakan di tengah jalan dan seluruh perintah gagal dengan
+-- "duplicate key value violates unique constraint".
+--
+-- Menjalankannya lagi pun tidak ada gunanya: baris yang sudah bernomor sudah
+-- benar, dan penomoran unggahan baru ditetapkan uraiTabel() mengikuti urutan
+-- baris di berkasnya.
+do $nomori$
+begin
+  if not exists (
+    select 1 from information_schema.columns
+    where table_name = 'transaksi_bank' and column_name = 'sidik'
+  ) then
+    update transaksi_bank t
+    set kembar_ke = u.urutan
+    from (
+      select id,
+             row_number() over (
+               partition by
+                 coalesce(no_rekening, ''),
+                 tanggal,
+                 lower(regexp_replace(coalesce(keterangan, ''), '\s+', ' ', 'g')),
+                 coalesce(debit, 0),
+                 coalesce(kredit, 0),
+                 lower(coalesce(referensi, ''))
+               order by dibuat_pada, id
+             ) as urutan
+      from transaksi_bank
+    ) u
+    where t.id = u.id and t.kembar_ke is distinct from u.urutan;
+  end if;
+end
+$nomori$;
 
 -- ---------------------------------------------------------------------------
 -- Sidik jarinya
@@ -155,6 +175,10 @@ $$;
 -- dilaporkan, karena dua penarikan bernominal sama pada hari yang sama memang
 -- lazim dan keduanya uang sungguhan.
 -- ---------------------------------------------------------------------------
+
+-- Dilepas dulu: migration berikutnya menambah kolom pada bentuk kembaliannya,
+-- dan replace tidak bisa mengubah bentuk kembalian fungsi.
+drop function if exists periksa_transaksi_ganda();
 
 create or replace function periksa_transaksi_ganda()
 returns table (

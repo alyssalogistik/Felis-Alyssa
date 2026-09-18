@@ -148,7 +148,11 @@ $fn$;
 -- koran padahal diketik orang.
 -- ---------------------------------------------------------------------------
 
-create or replace view pembayaran_semua
+-- Dilepas dulu, dengan alasan yang sama seperti transaksi_bank_unik: migration
+-- berikutnya menambahkan kolom, dan replace tidak bisa mengurangi kolom.
+drop view if exists pembayaran_semua;
+
+create view pembayaran_semua
 with (security_invoker = true) as
 select
   'bank'::text                as asal,
