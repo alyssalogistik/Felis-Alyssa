@@ -10,7 +10,7 @@
 import PDFDocument from 'pdfkit';
 import {
   A4, MARGIN, KOLOM, rupiah, tanggalPendek, keteranganFilter, susunHalaman,
-  totalkan, totalkanPerSumber,
+  totalkan, totalkanPerSumber, judulEntitas, judulEntitasPendek,
 } from './laporan.js';
 
 const FONT = 'Helvetica';
@@ -31,7 +31,7 @@ function kepalaDokumen(dok, kriteria, ringkasan, perSumber, dicetakPada) {
   let y = MARGIN;
 
   dok.font(FONT_TEBAL).fontSize(12).fillColor('#000000')
-    .text('PT ALYSSA AUTO LOGISTIK', MARGIN, y, { width: LEBAR_ISI, align: 'center' });
+    .text(judulEntitas(kriteria), MARGIN, y, { width: LEBAR_ISI, align: 'center' });
   y += 15;
 
   dok.font(FONT_TEBAL).fontSize(9)
@@ -96,12 +96,12 @@ function kepalaTabel(dok, y) {
   return bawah + 3;
 }
 
-function kakiHalaman(dok, nomor, dari) {
+function kakiHalaman(dok, nomor, dari, kriteria) {
   const y = A4.tinggi - MARGIN - 12;
   dok.moveTo(MARGIN, y - 4).lineTo(MARGIN + LEBAR_ISI, y - 4).lineWidth(0.5).strokeColor(GARIS_TIPIS).stroke();
 
   dok.font(FONT).fontSize(7).fillColor(ABU);
-  dok.text('PT Alyssa Auto Logistik - Audit Pembayaran Supplier', MARGIN, y, {
+  dok.text(`${judulEntitasPendek(kriteria)} - Audit Pembayaran Supplier`, MARGIN, y, {
     width: LEBAR_ISI / 2, lineBreak: false,
   });
   dok.text(`Halaman ${nomor} / ${dari}`, MARGIN + LEBAR_ISI / 2, y, {
@@ -215,7 +215,7 @@ export function buatPdfLaporan(transaksi, kriteria = {}, sekarang = new Date()) 
       y += isi.tinggi;
     }
 
-    kakiHalaman(dok, indeks + 1, halaman.length);
+    kakiHalaman(dok, indeks + 1, halaman.length, kriteria);
   });
 
   dok.end();
