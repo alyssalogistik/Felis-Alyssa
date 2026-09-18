@@ -9,11 +9,12 @@ import express from 'express';
 import { createHash } from 'node:crypto';
 import ExcelJS from 'exceljs';
 import { createAdminClient } from '../supabase.js';
-import { bacaRekeningKoran, BATAS_UKURAN } from './baca.js';
+import { bacaRekeningKoran, BATAS_UKURAN, PENANDA_PENDING } from './baca.js';
 import { GalatFormat, ringkasValidasi } from './parser.js';
 import { idUnggahanValid, periksaHapus, rincianHapus } from './hapus.js';
 import { saringPembayaran, saringPerubahan } from './pembayaran.js';
 import { cariKembar, peringatanSumber, perluKonfirmasi } from './kembar-bayar.js';
+import { cocokkanPending, sudahTersimpan } from './pending.js';
 import audit from './audit.js';
 
 const db = createAdminClient();
@@ -192,7 +193,33 @@ api.post(
       .single();
     if (galatUnggahan) throw galatUnggahan;
 
-    const baris = hasil.transaksi.map((t) => ({
+    // Baris PEND yang kini bertanggal dilunasi LEBIH DULU.
+    //
+    // Urutan ketiga langkah di bawah ini yang menentukan hasilnya, dan ketiganya
+    // harus selesai sebelum satu baris pun disisipkan:
+    //
+    //   1. Pelunasan mengisi tanggal baris PEND yang sudah tersimpan.
+    //   2. Pemeriksaan duplikat membaca ulang database — sehingga baris yang
+    //      baru saja dilunasi sudah terbaca bertanggal, dan transaksi baru yang
+    //      melunasinya ikut dikenali sebagai transaksi yang sama.
+    //   3. Sisanya disisipkan.
+    //
+    // Kalau nomor 2 berjalan lebih dulu, baris PEND masih bertanggal kosong saat
+    // dibandingkan, sehingga transaksi yang melunasinya lolos sebagai transaksi
+    // baru — dan satu transfer tersimpan dua kali: sekali sebagai baris PEND
+    // yang baru dilunasi, sekali sebagai baris dari cetakan yang melunasinya.
+    const pelunasan = await lunasiPending(hasil);
+
+    // Transaksi yang sudah tersimpan dari cetakan BCA bentuk lain tidak
+    // disisipkan ulang. Sidik jari tidak bisa menahannya: yang membedakannya
+    // justru tanggal (kosong pada baris PEND) dan kalimat keterangannya.
+    const dariCetakanLain = new Set(await sudahAdaDariCetakanLain(hasil));
+
+    // Irisan periode dilaporkan sebagai peringatan, bukan penolakan: irisan yang
+    // wajar memang ada, dan menolak berkas yang sah jauh lebih mengganggu.
+    const irisan = await irisanTersimpan(hasil);
+
+    const baris = hasil.transaksi.filter((t) => !dariCetakanLain.has(t)).map((t) => ({
       unggahan_id: unggahan.id,
       baris_sumber: t.baris_sumber,
       berkas_sumber: t.berkas_sumber,
@@ -245,11 +272,160 @@ api.post(
       periode: hasil.periode ?? null,
       no_rekening: hasil.noRekening ?? null,
       status,
+      rentang: hasil.rentang ?? null,
+      pending: hasil.pending ?? 0,
+      pelunasan_pending: { ...pelunasan, sudah_dari_cetakan_lain: dariCetakanLain.size },
+      irisan_periode: irisan,
       kolom_terdeteksi: Object.keys(hasil.peta),
       pernah_diunggah: sebelumnya?.[0] ?? null,
     });
   })
 );
+
+/**
+ * Isi tanggal baris PEND yang transaksinya kini muncul bertanggal.
+ *
+ * Yang diubah HANYA kolom tanggal, dan hanya pada baris yang tanggalnya memang
+ * masih kosong. Tidak ada baris yang dihapus, tidak ada nominal yang disentuh,
+ * dan baris yang sudah bertanggal tidak pernah menjadi sasaran.
+ *
+ * Pencocokannya sengaja pelit: hanya baris PEND yang cocok dengan tepat satu
+ * transaksi baru, dan sebaliknya, yang dilunasi. Yang meragukan dilaporkan
+ * apa adanya supaya bisa diperiksa mata — menebak di sini berarti menempelkan
+ * tanggal yang salah pada uang yang benar-benar keluar.
+ */
+async function lunasiPending(hasil) {
+  const kosong = { dilunasi: 0, ragu: [], bentrok: 0 };
+
+  // Tanpa nomor rekening, baris PEND milik rekening lain bisa ikut tersasar.
+  if (!hasil.noRekening) return kosong;
+  if (!hasil.transaksi.some((t) => t.tanggal)) return kosong;
+
+  const { data: pending, error } = await db
+    .from('transaksi_bank')
+    .select('id, keterangan, debit, kredit, saldo, no_rekening, tanggal, masalah')
+    .is('tanggal', null)
+    .eq('no_rekening', hasil.noRekening);
+  if (error) throw error;
+  if (!pending || pending.length === 0) return kosong;
+
+  // Nomor rekening belum menempel di hasil penguraian — ia dibaca dari kop,
+  // bukan dari baris transaksi — sedangkan baris tersimpan menyimpannya per
+  // baris. Tanpa disamakan di sini, tidak satu pun kunci akan pernah cocok.
+  const { promosi, ragu } = cocokkanPending(pending, hasil.transaksi, hasil.noRekening);
+
+  // Penanda PEND ikut dilepas saat tanggalnya terisi. Kalau ditinggalkan, baris
+  // yang sudah dibukukan tetap terbaca "belum dibukukan" selamanya — dan
+  // penanda yang berbohong lebih buruk daripada tidak ada penanda sama sekali.
+  const tanpaPenandaPending = (masalah) =>
+    (masalah ?? []).filter((m) => m !== PENANDA_PENDING && m !== 'Tanggal kosong.');
+
+  let dilunasi = 0;
+  let bentrok = 0;
+  const perId = new Map(pending.map((p) => [p.id, p]));
+  for (const { id, tanggal } of promosi) {
+    const sisa = tanpaPenandaPending(perId.get(id)?.masalah);
+    const { error: galat } = await db
+      .from('transaksi_bank')
+      .update({
+        tanggal,
+        masalah: sisa,
+        status_data: sisa.length === 0 ? 'valid' : 'perlu_diperiksa',
+      })
+      .eq('id', id)
+      .is('tanggal', null);
+
+    // 23505: sidik jari hasil pelunasan sudah dimiliki baris lain, artinya versi
+    // finalnya memang sudah tersimpan sejak unggahan sebelumnya. Baris PEND-nya
+    // dibiarkan apa adanya — dihitung, bukan dihapus diam-diam.
+    if (galat?.code === '23505') { bentrok += 1; continue; }
+    if (galat) throw galat;
+    dilunasi += 1;
+  }
+
+  return { dilunasi, ragu, bentrok };
+}
+
+/**
+ * Transaksi pada berkas ini yang sudah tersimpan dari cetakan lain.
+ *
+ * Sidik jari di database tidak bisa menahannya, karena dua hal yang ikut
+ * menyusunnya justru yang berbeda: tanggal (kosong pada baris PEND) dan
+ * keterangan (kedua cetakan BCA menuliskannya dengan kalimat berbeda).
+ *
+ * Yang dikembalikan daftar transaksi yang harus DILEWATI saat penyisipan. Tidak
+ * ada baris tersimpan yang disentuh di sini: yang dilakukan hanya tidak
+ * menambah baris baru.
+ */
+async function sudahAdaDariCetakanLain(hasil) {
+  if (!hasil.noRekening) return [];
+
+  // Saldo berjalan sangat memilah, jadi dipakai menyempitkan kueri lebih dulu:
+  // hanya baris tersimpan yang saldonya muncul di berkas ini yang perlu dibaca.
+  const saldo = [...new Set(hasil.transaksi.map((t) => t.saldo).filter((x) => x !== null))];
+  if (saldo.length === 0) return [];
+
+  const tersimpan = [];
+  for (let i = 0; i < saldo.length; i += UKURAN_BATCH) {
+    const { data, error } = await db
+      .from('transaksi_bank')
+      .select('keterangan, debit, kredit, saldo, no_rekening, tanggal')
+      .eq('no_rekening', hasil.noRekening)
+      .in('saldo', saldo.slice(i, i + UKURAN_BATCH));
+    if (error) throw error;
+    tersimpan.push(...(data ?? []));
+  }
+
+  const dariDatabase = sudahTersimpan(tersimpan, hasil.transaksi, hasil.noRekening);
+
+  // Baris PEND dibandingkan juga dengan baris bertanggal DI DALAM berkas ini
+  // sendiri. Satu PDF gabungan bisa memuat cetakan lama beserta baris PEND-nya
+  // sekaligus cetakan berikutnya yang sudah membukukannya; tanpa ini keduanya
+  // tersisip bersamaan dan satu transfer terhitung dua kali sejak unggahan
+  // pertamanya.
+  //
+  // Yang dibandingkan HANYA baris PEND. Membandingkan baris bertanggal dengan
+  // isi berkasnya sendiri membuat setiap baris cocok dengan dirinya sendiri,
+  // dan seluruh berkas dilewati sebagai “sudah ada” pada unggahan pertamanya —
+  // uang yang benar-benar keluar tidak pernah tercatat sama sekali.
+  const dariBerkasIni = sudahTersimpan(
+    hasil.transaksi.filter((t) => t.tanggal),
+    hasil.transaksi.filter((t) => !t.tanggal),
+    hasil.noRekening
+  );
+
+  return [...new Set([...dariDatabase, ...dariBerkasIni])];
+}
+
+/**
+ * Berapa transaksi tersimpan yang tanggalnya berada di dalam rentang berkas ini.
+ *
+ * Dipakai sebagai peringatan, bukan penolakan. Mengunggah e-statement bulanan
+ * September setelah mutasi harian 1–16 September memasukkan transaksi yang sama
+ * untuk kedua kalinya, dan kali ini penjaga duplikat tidak menahannya: kedua
+ * cetakan menuliskan keterangan transaksi yang sama dengan kalimat yang berbeda,
+ * sehingga sidik jarinya pun berbeda.
+ */
+async function irisanTersimpan(hasil) {
+  if (!hasil.noRekening) return null;
+
+  const tanggal = hasil.transaksi.map((t) => t.tanggal).filter(Boolean).sort();
+  if (tanggal.length === 0) return null;
+
+  const mulai = tanggal[0];
+  const selesai = tanggal[tanggal.length - 1];
+
+  const { count, error } = await db
+    .from('transaksi_bank')
+    .select('id', { count: 'exact', head: true })
+    .eq('no_rekening', hasil.noRekening)
+    .gte('tanggal', mulai)
+    .lte('tanggal', selesai);
+  if (error) throw error;
+  if (!count) return null;
+
+  return { mulai, selesai, transaksi_tersimpan: count };
+}
 
 // --- Pemeriksaan periode sebelum impor --------------------------------------
 
@@ -288,6 +464,9 @@ api.post(
     res.json({
       nama_berkas: namaBerkas,
       periode: hasil.periode ?? null,
+      // Cetakan Mutasi Rekening berupa rentang tanggal yang boleh melewati
+      // batas bulan; `periode` hanya memuat bulan awalnya.
+      rentang: hasil.rentang ?? null,
       no_rekening: hasil.noRekening ?? null,
       sheet: hasil.sheet,
       jumlah_transaksi: hasil.transaksi.length,
@@ -335,7 +514,7 @@ api.get('/supplier', jalur(async (_req, res) => {
       .from(TABEL_GABUNGAN)
       .select('keterangan, debit, tanggal, kredit')
       .gt('debit', 0)
-      .order('tanggal', { ascending: false, nullsFirst: false })
+      .order('tanggal', { ascending: false, nullsFirst: true })
       .range(mulai, mulai + UKURAN_PINDAI - 1);
 
     if (error) throw error;
@@ -360,7 +539,15 @@ api.get('/transaksi', jalur(async (req, res) => {
   let query = db
     .from(sumber.tabel)
     .select(sumber.kolom, { count: 'exact' })
-    .order('tanggal', { ascending: false, nullsFirst: false })
+    // Baris tanpa tanggal ditaruh PALING ATAS, bukan paling bawah.
+    //
+    // Yang tanggalnya kosong adalah transaksi PEND: uangnya sudah keluar, tanggal
+    // bukunya belum ditetapkan BCA, dan justru itulah pergerakan paling baru di
+    // rekening. Di bawah, ia terkubur di ujung daftar ribuan baris — bahkan bisa
+    // jatuh di luar BATAS_MUATAN — sehingga auditor yang bertanya "supplier ini
+    // sudah saya transfer belum" melihat daftar yang tampak lengkap padahal
+    // transfer terbarunya tidak ikut termuat.
+    .order('tanggal', { ascending: false, nullsFirst: true })
     .order('baris_sumber', { ascending: true, nullsFirst: false })
     .range(mulai, mulai + batas - 1);
 
@@ -619,7 +806,7 @@ api.get('/cetak', jalur(async (req, res) => {
   let query = db
     .from(sumber.tabel)
     .select(sumber.kolom)
-    .order('tanggal', { ascending: true, nullsFirst: false })
+    .order('tanggal', { ascending: true, nullsFirst: true })
     .order('baris_sumber', { ascending: true, nullsFirst: false })
     .limit(BATAS_CETAK);
 
@@ -648,7 +835,7 @@ api.get('/ekspor', jalur(async (req, res) => {
   let query = db
     .from(sumber.tabel)
     .select(sumber.kolom)
-    .order('tanggal', { ascending: true, nullsFirst: false })
+    .order('tanggal', { ascending: true, nullsFirst: true })
     .order('baris_sumber', { ascending: true, nullsFirst: false })
     .limit(20000);
 

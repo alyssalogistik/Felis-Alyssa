@@ -17,8 +17,14 @@ const TOLERANSI_BARIS = 2.5;
  * halaman berikutnya akan terbaca sebagai sambungan keterangan transaksi
  * terakhir halaman sebelumnya.
  *
+ * Setiap potongan membawa `y`, yaitu posisi tegak baris tempatnya berada —
+ * sama untuk seluruh potongan dalam satu baris. Jarak antarbaris inilah
+ * satu-satunya petunjuk yang memisahkan satu transaksi dari transaksi
+ * berikutnya pada tata letak Mutasi Rekening, yang tidak mencetak garis
+ * maupun pemisah apa pun.
+ *
  * @param {Buffer} buffer
- * @returns {Promise<Array<Array<Array<{x: number, lebar: number, teks: string}>>>>}
+ * @returns {Promise<Array<Array<Array<{x: number, y: number, lebar: number, teks: string}>>>>}
  *          Satu larik per halaman, berisi larik baris, berisi potongan teks.
  */
 export async function bacaBarisPdf(buffer) {
@@ -63,7 +69,7 @@ export async function bacaBarisPdf(buffer) {
       }
       if (kunci === null) { kunci = y; perY.set(kunci, []); }
 
-      perY.get(kunci).push({ x: item.transform[4], lebar: item.width ?? 0, teks });
+      perY.get(kunci).push({ x: item.transform[4], y: kunci, lebar: item.width ?? 0, teks });
     }
 
     // y membesar ke atas pada PDF, jadi urutan bacanya menurun.
