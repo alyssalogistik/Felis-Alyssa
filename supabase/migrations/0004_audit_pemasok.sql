@@ -106,7 +106,13 @@ create index if not exists idx_kecocokan_status on kecocokan (status);
 -- pengurutan bisa dilakukan database alih-alih menarik semuanya ke aplikasi.
 -- ---------------------------------------------------------------------------
 
-create or replace view audit_pembayaran_pemasok
+-- Dilepas dulu, bukan create or replace: migration berikutnya menambahkan
+-- kolom pada view ini, dan replace tidak bisa MENGURANGI kolom. Tanpa ini,
+-- menjalankan ulang setup-lengkap.sql pada database yang skemanya sudah lebih
+-- baru gagal dengan "cannot drop columns from view".
+drop view if exists audit_pembayaran_pemasok;
+
+create view audit_pembayaran_pemasok
 with (security_invoker = true) as
 select
   t.id                as tagihan_id,

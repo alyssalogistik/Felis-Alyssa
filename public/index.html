@@ -148,8 +148,20 @@
 
     <div class="panel">
       <h3>Rekening Koran</h3>
+
+      <!-- Wajib dipilih sebelum berkas bisa diunggah. Tanpa penanda pemilik
+           rekening, rekening koran CV akan tercatat sebagai milik PT dan
+           bercampur di pencarian supplier tanpa satu pun gejala. -->
+      <label>Rekening milik siapa?
+        <select id="entitas-unggah" required>
+          <option value="">— pilih dulu —</option>
+          <option value="PT_ALYSSA_AUTO_LOGISTIK">PT Alyssa Auto Logistik</option>
+          <option value="CV_ALYSSA_TRANS_UTAMA">CV Alyssa Trans Utama</option>
+        </select>
+      </label>
+
       <label class="unggah">
-        <input type="file" id="berkas-koran" accept=".pdf,.xlsx,.csv" hidden>
+        <input type="file" id="berkas-koran" accept=".pdf,.xlsx,.csv" hidden disabled>
         <span class="tombol tombol-blok">+ Upload PDF BCA / WPS / Excel</span>
       </label>
       <p id="status-unggah" class="status-unggah">Belum ada file</p>
@@ -158,6 +170,14 @@
 
     <form class="panel" id="filter-rekon">
       <h3>Filter</h3>
+
+      <label>Sumber Rekening
+        <select name="entitas">
+          <option value="">Semua</option>
+          <option value="PT_ALYSSA_AUTO_LOGISTIK">PT Alyssa Auto Logistik</option>
+          <option value="CV_ALYSSA_TRANS_UTAMA">CV Alyssa Trans Utama</option>
+        </select>
+      </label>
 
       <label>Nama / Keterangan
         <input name="cari" type="search" placeholder="🔎 Cari nama atau kata kunci" autocomplete="off">
@@ -250,8 +270,16 @@
         paling lama. Menyimpan ke data transaksi yang sama dengan menu
         Rekonsiliasi Bank.
       </p>
+      <label>Rekening milik siapa?
+        <select id="entitas-unggah-audit" required>
+          <option value="">— pilih dulu —</option>
+          <option value="PT_ALYSSA_AUTO_LOGISTIK">PT Alyssa Auto Logistik</option>
+          <option value="CV_ALYSSA_TRANS_UTAMA">CV Alyssa Trans Utama</option>
+        </select>
+      </label>
+
       <label class="unggah">
-        <input type="file" id="berkas-koran-audit" accept=".pdf,.xlsx,.csv" multiple hidden>
+        <input type="file" id="berkas-koran-audit" accept=".pdf,.xlsx,.csv" multiple hidden disabled>
         <span class="tombol tombol-blok">+ Upload Rekening Koran BCA</span>
       </label>
       <p id="status-koran-audit" class="status-unggah">Belum ada transaksi bank</p>
@@ -275,6 +303,14 @@
       </p>
 
       <form id="form-bayar-manual" class="formulir">
+        <label>Dibayar oleh <span class="wajib">*</span>
+          <select name="entitas" required>
+            <option value="">— pilih dulu —</option>
+            <option value="PT_ALYSSA_AUTO_LOGISTIK">PT Alyssa Auto Logistik</option>
+            <option value="CV_ALYSSA_TRANS_UTAMA">CV Alyssa Trans Utama</option>
+          </select>
+        </label>
+
         <div class="sejajar">
           <label>Tanggal pembayaran <span class="wajib">*</span>
             <input name="tanggal" type="date" required>
@@ -346,6 +382,14 @@
         Mencari langsung di keterangan transaksi rekening koran. Tidak perlu
         mengunggah daftar tagihan.
       </p>
+
+      <label>Sumber Rekening
+        <select name="entitas">
+          <option value="">Semua</option>
+          <option value="PT_ALYSSA_AUTO_LOGISTIK">PT Alyssa Auto Logistik</option>
+          <option value="CV_ALYSSA_TRANS_UTAMA">CV Alyssa Trans Utama</option>
+        </select>
+      </label>
 
       <label>Cari Supplier / Nama / Kata Kunci
         <input name="cari" type="search" placeholder="&#128269; Contoh: TRIO PUTRA" autocomplete="off">
@@ -427,8 +471,20 @@
 
     <div class="panel">
       <h3>Daftar Tagihan Supplier</h3>
+
+      <!-- Tagihan pun milik salah satu perusahaan, dan pencocokannya dijalankan
+           per entitas: tanpa ini satu tagihan PT bisa berpasangan dengan
+           transfer CV, lalu pasangan yang salah itu menempel permanen. -->
+      <label>Tagihan milik siapa?
+        <select id="entitas-tagihan" required>
+          <option value="">— pilih dulu —</option>
+          <option value="PT_ALYSSA_AUTO_LOGISTIK">PT Alyssa Auto Logistik</option>
+          <option value="CV_ALYSSA_TRANS_UTAMA">CV Alyssa Trans Utama</option>
+        </select>
+      </label>
+
       <label class="unggah">
-        <input type="file" id="berkas-tagihan" accept=".xlsx,.csv" hidden>
+        <input type="file" id="berkas-tagihan" accept=".xlsx,.csv" hidden disabled>
         <span class="tombol tombol-blok">+ Upload Daftar Tagihan</span>
       </label>
       <p id="status-tagihan" class="status-unggah">Belum ada tagihan</p>
@@ -439,6 +495,13 @@
 
     <form class="panel" id="filter-audit">
       <h3>Filter</h3>
+      <label>Sumber Rekening
+        <select name="entitas">
+          <option value="">Semua</option>
+          <option value="PT_ALYSSA_AUTO_LOGISTIK">PT Alyssa Auto Logistik</option>
+          <option value="CV_ALYSSA_TRANS_UTAMA">CV Alyssa Trans Utama</option>
+        </select>
+      </label>
       <label>Supplier
         <input name="pemasok" type="search" placeholder="🔎 Nama supplier" autocomplete="off">
       </label>

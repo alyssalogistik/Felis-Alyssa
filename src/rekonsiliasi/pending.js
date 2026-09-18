@@ -67,8 +67,14 @@ export function intiKeterangan(teks) {
  * setiap transaksi mengubahnya — sehingga saldo yang sama beserta nominal yang
  * sama berarti transaksi yang sama, bukan dua transaksi yang mirip.
  */
-function kunci(t, noRekening) {
+function kunci(t, noRekening, entitas) {
   return [
+    // Entitas ikut menyusun kunci, dan itu yang memisahkan PT dari CV.
+    // Nomor rekening saja tidak cukup: baris lama tidak menyimpannya, dan yang
+    // menyimpannya pun tidak seragam (0072890271 maupun 00072890271 untuk
+    // rekening yang sama), sehingga transfer CV bisa tampak melunasi baris
+    // PEND milik PT.
+    String(t.entitas ?? entitas ?? ''),
     String(t.no_rekening ?? noRekening ?? ''),
     intiKeterangan(t.keterangan),
     Number(t.debit ?? 0).toFixed(2),
@@ -89,11 +95,11 @@ function bisaDibandingkan(t) {
   return Number(t.debit ?? 0) > 0 || Number(t.kredit ?? 0) > 0;
 }
 
-function kelompokkan(daftar, noRekening, saring) {
+function kelompokkan(daftar, noRekening, entitas, saring) {
   const peta = new Map();
   for (const t of daftar) {
     if (!bisaDibandingkan(t) || !saring(t)) continue;
-    const k = kunci(t, noRekening);
+    const k = kunci(t, noRekening, entitas);
     if (!peta.has(k)) peta.set(k, []);
     peta.get(k).push(t);
   }
@@ -114,9 +120,9 @@ function kelompokkan(daftar, noRekening, saring) {
  * menebak di sini berarti menempelkan tanggal yang salah pada uang yang
  * benar-benar keluar, dan tanggal yang salah tidak menimbulkan galat apa pun.
  */
-export function cocokkanPending(tersimpan, transaksiBaru, noRekening = null) {
-  const pending = kelompokkan(tersimpan, noRekening, (t) => !t.tanggal);
-  const baru = kelompokkan(transaksiBaru, noRekening, (t) => Boolean(t.tanggal));
+export function cocokkanPending(tersimpan, transaksiBaru, noRekening = null, entitas = null) {
+  const pending = kelompokkan(tersimpan, noRekening, entitas, (t) => !t.tanggal);
+  const baru = kelompokkan(transaksiBaru, noRekening, entitas, (t) => Boolean(t.tanggal));
 
   const promosi = [];
   const ragu = [];
@@ -161,14 +167,14 @@ export function cocokkanPending(tersimpan, transaksiBaru, noRekening = null) {
  * transaksi sungguhan jauh lebih berbahaya daripada menyisipkan satu baris yang
  * nanti ketahuan kembar, jadi begitu ada keraguan barisnya tetap disisipkan.
  */
-export function sudahTersimpan(tersimpan, transaksiBaru, noRekening = null) {
-  const lama = kelompokkan(tersimpan, noRekening, () => true);
+export function sudahTersimpan(tersimpan, transaksiBaru, noRekening = null, entitas = null) {
+  const lama = kelompokkan(tersimpan, noRekening, entitas, () => true);
   const dilewati = [];
 
   for (const t of transaksiBaru) {
     if (!bisaDibandingkan(t)) continue;
 
-    const kandidat = lama.get(kunci(t, noRekening));
+    const kandidat = lama.get(kunci(t, noRekening, entitas));
     if (!kandidat || kandidat.length !== 1) continue;
     const satu = kandidat[0];
 

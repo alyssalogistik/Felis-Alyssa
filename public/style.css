@@ -697,3 +697,10 @@ dialog .tombol-lembut, dialog .tombol { margin-top: 0; }
 @media print {
   #panel-supplier { display: none !important; }
 }
+
+/* Kotak unggah yang masih menunggu pilihan pemilik rekening.
+   Tampak jelas belum bisa ditekan, supaya langkah "pilih dulu miliknya siapa"
+   terbaca sebagai bagian dari alurnya, bukan sebagai galat yang muncul
+   belakangan setelah berkas telanjur dipilih. */
+.unggah.terkunci { opacity: .45; cursor: not-allowed; }
+.unggah.terkunci .tombol { pointer-events: none; }

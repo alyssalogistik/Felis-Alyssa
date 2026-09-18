@@ -8,6 +8,16 @@ const akar = join(dirname(fileURLToPath(import.meta.url)), '..');
 const app = express();
 
 app.use(express.json({ limit: '1mb' }));
+// Satu berkas aturan entitas, dipakai server DAN peramban.
+//
+// Tanpa build step, public/ tidak bisa mengimpor dari src/. Menyalinnya akan
+// menghasilkan dua berkas yang harus dijaga sama, dan yang satu pasti pernah
+// tertinggal — lalu daftar perusahaan di layar berbeda dari yang diterima
+// server, tanpa satu pun galat. Jadi berkasnya disajikan, bukan digandakan.
+app.get('/entitas.js', (_req, res) =>
+  res.type('application/javascript').sendFile(join(akar, 'src/rekonsiliasi/entitas.js'))
+);
+
 app.use(express.static(join(akar, 'public')));
 
 // Dipakai Railway untuk memastikan container sudah siap. Sengaja tidak

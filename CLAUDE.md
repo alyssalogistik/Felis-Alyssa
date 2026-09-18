@@ -112,6 +112,104 @@ Sisa peringatan `npm audit` yang diketahui: **uuid** melalui exceljs
 peringatan ini dibiarkan secara sadar. Tinjau ulang saat exceljs memperbarui
 dependensinya.
 
+## Dua perusahaan, satu database
+
+PT Alyssa Auto Logistik dan CV Alyssa Trans Utama membayar sebagian supplier
+yang sama. Tanpa pemisahan, mencari SUGENG RIYANTO dari rekening CV akan
+memunculkan transfer PT juga — dan yang tampak sudah dibayar sebenarnya dibayar
+oleh perusahaan yang lain.
+
+Penandanya kolom `entitas` pada `transaksi_bank`, `unggahan_rekening_koran`,
+`pembayaran_manual`, dan `tagihan_pemasok`. Kodenya di `src/rekonsiliasi/entitas.js`,
+satu berkas yang dipakai server maupun peramban: `src/server.js` menyajikannya di
+`/entitas.js` alih-alih menyalinnya ke `public/`, karena salinan yang tertinggal
+akan membuat daftar perusahaan di layar berbeda dari yang diterima server tanpa
+satu pun galat.
+
+**Nomor rekening tidak bisa dipakai sebagai penandanya.** Baris lama belum
+menyimpannya sama sekali, dan yang menyimpannya pun tidak seragam: satu rekening
+PT yang sama tercatat sebagai `0072890271` maupun `00072890271`. Karena itu
+seluruh data yang sudah ada di-backfill sebagai PT — seluruh rekening koran yang
+pernah diunggah sebelum pemisahan ini memang milik PT.
+
+### Tidak ada entitas bawaan
+
+Menyimpan apa pun menuntut entitas yang disebut eksplisit: unggah rekening
+koran, unggah daftar tagihan, input pembayaran manual, dan menjalankan
+Auto-Match. Nilai bawaan yang diam-diam dipakai ketika pilihannya lupa dikirim
+akan menandai rekening koran CV sebagai milik PT — kekeliruan yang tidak
+menimbulkan galat apa pun, baru ketahuan berbulan kemudian saat angka auditnya
+dipakai, dan saat itu tidak ada cara membedakan lagi baris mana yang salah tanda.
+
+Pada **penyaringan**, tidak memilih apa-apa adalah pilihan yang sah dan berarti
+"Semua". Tetapi nilai yang **tidak dikenali ditolak dengan 400**, bukan jatuh ke
+"Semua": salah ketik yang diam-diam berarti seluruh perusahaan akan memunculkan
+transaksi perusahaan lain tanpa gejala — justru yang seluruh pemisahan ini cegah.
+
+Kotak berkas terkunci sampai pemilik rekening dipilih. Menolak sesudah berkas
+telanjur dipilih membuat langkah itu terasa seperti galat, bukan bagian alurnya.
+
+Satu nomor rekening hanya milik satu perusahaan. Unggahan yang nomor
+rekeningnya sudah tercatat milik entitas lain ditolak dengan 409 beserta
+kedua nama perusahaannya.
+
+### Entitas ikut menyusun kunci, bukan sekadar menyaring
+
+Tiga tempat, dan ketiganya perlu:
+
+- **`sidik`** di `transaksi_bank`. Tanpa entitas di dalamnya, transaksi CV yang
+  kebetulan sama tanggal, nominal, dan keterangannya dengan transaksi PT
+  tertolak indeks unik sebagai duplikat, dan uang yang benar-benar keluar hilang
+  dari catatan. Diuji terhadap data sungguhan: dari tiga baris CV yang identik
+  dengan baris PT, **dua akan tertolak** dengan rumus lama.
+- **Kunci pelipatan `transaksi_bank_unik`.** Tanpa itu satu transfer PT dan satu
+  transfer CV yang kebetulan serupa dilipat menjadi satu baris di layar, dan
+  salah satunya hilang dari hitungan. Nomor rekening tetap tidak ikut, dengan
+  alasan yang sama seperti semula.
+- **`kunci()` di `pending.js`.** Tanpa itu transfer CV bisa tampak melunasi
+  baris PEND milik PT, menempelkan tanggal perusahaan lain pada uang yang
+  benar-benar keluar.
+
+Ringkasan ikut disaring lewat parameter `p_entitas` pada fungsi database. Kalau
+tidak, layar menampilkan transaksi CV sedangkan totalnya masih menjumlahkan PT
+dan CV sekaligus — kekeliruannya hanya berpindah tempat.
+
+### Yang mudah terlewat
+
+- **`cariSupplier()` mempertahankan pilihan entitas melewati `reset()`.** Filter
+  lain sengaja dikosongkan supaya hasilnya seluruh transfer supplier itu; tetapi
+  entitas bukan penyempit hasil, ia menentukan perusahaan mana yang sedang
+  diperiksa. Ikut terhapus berarti sekali klik pada nama supplier memunculkan
+  transfer perusahaan lain.
+- **Nomor invoice hanya unik di dalam satu entitas.** Kedua perusahaan bisa
+  menerima invoice bernomor sama dari supplier yang sama; aturan lama menolak
+  yang kedua sebagai unggahan ganda.
+- **Auto-Match wajib menyebut entitas, tidak boleh "Semua".** Pasangan
+  tagihan-transaksi tersimpan permanen dan satu tagihan hanya boleh punya satu
+  pasangan. Pencocokan lintas entitas menempelkan pasangan yang salah di
+  database: tagihan PT tampak lunas padahal yang membayar perusahaan lain, dan
+  tagihan yang sebenarnya belum dibayar hilang dari daftar menyimpang.
+- **Nama berkas laporan memuat PT/CV.** Dua laporan supplier yang sama dari dua
+  perusahaan akan bernama sama persis di folder unduhan, dan yang terunduh
+  belakangan menimpa yang pertama tanpa peringatan.
+
+### Penomoran `kembar_ke` di 0006 hanya sekali
+
+Blok penomoran ulang di `0006` kini dijaga: ia hanya berjalan ketika kolom
+`sidik` belum ada. Sesudah sidik berdiri, indeks uniknya diperiksa per baris
+selama UPDATE berjalan, bukan di akhir — penomoran ulang yang menukar dua nomor
+bertabrakan di tengah jalan dan seluruh perintah gagal dengan "duplicate key
+value violates unique constraint".
+
+Ini bug yang sudah ada sejak 0006 dan baru terlihat setelah database memuat
+transaksi kembar sungguhan: `setup-lengkap.sql` yang dijalankan kedua kalinya
+gagal. Gagalnya aman — satu blok `DO`, jadi tidak ada yang berubah — tetapi
+berkas itu dijanjikan aman dijalankan berulang.
+
+Sebab yang sama menuntut `drop view if exists` sebelum setiap `create view`
+di `0004`, `0007`, dan `0008`: `create or replace view` tidak bisa MENGURANGI
+kolom, sedangkan `0009` menambah kolom pada ketiganya.
+
 ## Rekening koran PDF (BCA)
 
 Satu uploader, satu penyimpanan. Halaman Audit dan halaman Rekonsiliasi Bank

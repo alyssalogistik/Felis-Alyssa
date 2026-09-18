@@ -4,6 +4,8 @@
 // daftar masalahnya. Tanpa I/O, sehingga aturannya bisa diuji tanpa database
 // dan hanya ada satu tempat yang memutuskan apa itu isian yang sah.
 
+import { kodeEntitas } from './entitas.js';
+
 /** Sumber dana yang boleh dipilih. Kunci disimpan, nilainya ditampilkan. */
 export const SUMBER = {
   MEKARI_PAY: 'Mekari Pay',
@@ -100,6 +102,11 @@ export function saringPembayaran(masuk = {}) {
   const oleh = rapat(masuk.dibuat_oleh);
   if (oleh === '') masalah.push('Kolom "Diinput oleh" harus diisi.');
 
+  // Pembayaran manual pun milik salah satu perusahaan. Tanpa penandanya, ia
+  // muncul di kedua tab dan totalnya terhitung dua kali.
+  const entitas = kodeEntitas(masuk.entitas);
+  if (entitas === null) masalah.push('Rekening/entitas pembayar belum dipilih.');
+
   const bukti = tautanAman(masuk.bukti_url);
   if (!bukti.ok) masalah.push('Link bukti harus berupa alamat http:// atau https://.');
 
@@ -117,6 +124,7 @@ export function saringPembayaran(masuk = {}) {
       memo: kosong(masuk.memo) ? null : rapat(masuk.memo),
       bukti_url: bukti.nilai,
       dibuat_oleh: oleh,
+      entitas,
     },
   };
 }
@@ -134,6 +142,7 @@ export function saringPerubahan(masuk = {}) {
     no_referensi: masuk.no_referensi,
     memo: masuk.memo,
     bukti_url: masuk.bukti_url,
+    entitas: masuk.entitas,
     // Perubahan mencatat pengubahnya, bukan pembuatnya; pembuat aslinya tidak
     // boleh ikut tertimpa.
     dibuat_oleh: masuk.diubah_oleh,

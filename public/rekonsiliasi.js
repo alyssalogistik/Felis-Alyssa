@@ -134,7 +134,7 @@ async function muatStatusUnggahan() {
   }
 }
 
-async function unggahBerkas(berkas) {
+async function unggahBerkas(berkas, entitas) {
   const kotak = el('pesan-unggah');
   const tampilkan = (kelas, teks) => {
     kotak.className = `pesan ${kelas}`;
@@ -150,6 +150,7 @@ async function unggahBerkas(berkas) {
       headers: {
         'Content-Type': 'application/octet-stream',
         'X-Nama-Berkas': encodeURIComponent(berkas.name),
+        'X-Entitas': encodeURIComponent(entitas ?? ''),
       },
       body: berkas,
     });
@@ -171,8 +172,8 @@ async function unggahBerkas(berkas) {
     }
 
     const ringkas =
-      `${r.total} transaksi terbaca dari sheet "${isi.sheet}". ${r.valid} valid` +
-      (catatan.length > 0 ? ` — ${catatan.join(', ')}.` : '.');
+      `${isi.entitas_label ?? ''}: ${r.total} transaksi terbaca dari sheet "${isi.sheet}". ` +
+      `${r.valid} valid` + (catatan.length > 0 ? ` — ${catatan.join(', ')}.` : '.');
 
     // Irisan periode tidak menggagalkan unggahan; ia hanya perlu terlihat.
     // E-statement bulanan dan Mutasi Rekening harian menuliskan transaksi yang
@@ -326,9 +327,24 @@ export function pasangKendaliRekonsiliasi() {
     ...Array.from({ length: 7 }, (_, i) => String(tahunIni + 1 - i)).map((t) => new Option(t, t))
   );
 
-  el('berkas-koran').addEventListener('change', (peristiwa) => {
+  // Kotak berkas terkunci sampai pemilik rekening dipilih.
+  //
+  // Bukan sekadar divalidasi saat mengirim: begitu kotak berkas terbuka, orang
+  // sudah memilih berkas dan menganggap unggahannya berjalan. Menolak sesudah
+  // itu membuat langkah "pilih dulu miliknya siapa" terasa seperti galat,
+  // bukan bagian dari alurnya.
+  const pilihanEntitas = el('entitas-unggah');
+  const berkasKoran = el('berkas-koran');
+  const kunciUnggah = () => {
+    berkasKoran.disabled = pilihanEntitas.value === '';
+    berkasKoran.closest('.unggah')?.classList.toggle('terkunci', berkasKoran.disabled);
+  };
+  pilihanEntitas.addEventListener('change', kunciUnggah);
+  kunciUnggah();
+
+  berkasKoran.addEventListener('change', (peristiwa) => {
     const berkas = peristiwa.target.files?.[0];
-    if (berkas) unggahBerkas(berkas);
+    if (berkas) unggahBerkas(berkas, pilihanEntitas.value);
     // Dikosongkan supaya memilih berkas yang sama dua kali tetap memicu unggahan.
     peristiwa.target.value = '';
   });

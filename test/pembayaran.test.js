@@ -12,6 +12,7 @@ const isian = (ubah = {}) => ({
   nominal: '28000000',
   sumber: 'MEKARI_PAY',
   dibuat_oleh: 'Sean',
+  entitas: 'PT_ALYSSA_AUTO_LOGISTIK',
   ...ubah,
 });
 
@@ -69,10 +70,20 @@ test('KAIDAH: spasi ganda di tengah nama dirapatkan, bukan hanya dipangkas', () 
 });
 
 test('kolom wajib yang kosong dilaporkan satu per satu', () => {
-  const h = saringPembayaran({ tanggal: '', penerima: '', nominal: '', sumber: '', dibuat_oleh: '' });
+  const h = saringPembayaran({ tanggal: '', penerima: '', nominal: '', sumber: '', dibuat_oleh: '', entitas: '' });
   assert.equal(h.ok, false);
   assert.equal(h.nilai, null);
-  assert.equal(h.masalah.length, 5, h.masalah.join(' | '));
+  assert.equal(h.masalah.length, 6, h.masalah.join(' | '));
+});
+
+test('KAIDAH: pembayaran manual wajib menyebut entitas pembayarnya', () => {
+  // Tanpa penandanya, satu pembayaran muncul di tab PT maupun CV dan totalnya
+  // terhitung dua kali.
+  const h = saringPembayaran(isian({ entitas: '' }));
+  assert.equal(h.ok, false);
+  assert.ok(h.masalah.some((m) => /entitas/i.test(m)), h.masalah.join(' | '));
+  assert.equal(saringPembayaran(isian({ entitas: 'PT LAIN' })).ok, false);
+  assert.equal(saringPembayaran(isian()).nilai.entitas, 'PT_ALYSSA_AUTO_LOGISTIK');
 });
 
 test('"Diinput oleh" wajib — audit trail tanpa nama cuma hiasan', () => {

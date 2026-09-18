@@ -405,7 +405,16 @@ export function cariSupplier(nama) {
   const formulir = el('cari-bayaran');
   if (!formulir) return;
 
+  // Pilihan sumber rekening DIPERTAHANKAN melewati reset.
+  //
+  // Filter lain sengaja dikosongkan supaya hasilnya seluruh transfer supplier
+  // itu, bukan sebagian. Tetapi entitas bukan penyempit hasil — ia menentukan
+  // perusahaan mana yang sedang diperiksa. Ikut terhapus berarti sekali klik
+  // pada nama supplier memunculkan transfer perusahaan lain, dan orang yang
+  // sedang memeriksa CV melihat pembayaran PT sebagai miliknya.
+  const entitas = formulir.elements.entitas?.value ?? '';
   formulir.reset();
+  if (formulir.elements.entitas) formulir.elements.entitas.value = entitas;
   formulir.elements.cari.value = nama;
   pesanCari('', '');
   cariBayaran();
@@ -416,6 +425,12 @@ export function cariSupplier(nama) {
 export function pasangKendaliBayaran() {
   const formulir = el('cari-bayaran');
   if (!formulir) return;
+
+  // Mengganti sumber rekening memuat ulang daftar supplier juga: daftarnya
+  // disusun dari keterangan bank, jadi ia harus ikut berpindah perusahaan.
+  formulir.elements.entitas?.addEventListener('change', () => {
+    import('./supplier.js').then((m) => m.muatSupplier()).catch(() => {});
+  });
 
   formulir.bulan.append(...NAMA_BULAN.map((nama, i) => new Option(nama, String(i + 1))));
   const tahunIni = new Date().getFullYear();

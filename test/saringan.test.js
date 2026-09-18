@@ -249,3 +249,51 @@ test('spasi ganda di tengah kata kunci dirapatkan', () => {
     saring(NOVEMBER, { cari: 'SUGENG RIYANTO' }).length
   );
 });
+
+// --- Pemisahan entitas pemilik rekening -------------------------------------
+//
+// Aturan ini hidup di dua tempat yang sengaja dijaga cermin: saring() di sini
+// dan terapkanKriteria() di api.js. Kalau salah satu diubah, ubah keduanya.
+
+const duaEntitas = [
+  { tanggal: '2026-09-01', keterangan: 'TRANSFER KE SUGENG RIYANTO', debit: 2500000, kredit: 0, entitas: 'PT_ALYSSA_AUTO_LOGISTIK' },
+  { tanggal: '2026-09-02', keterangan: 'TRANSFER KE SUGENG RIYANTO', debit: 1750000, kredit: 0, entitas: 'CV_ALYSSA_TRANS_UTAMA' },
+  { tanggal: '2026-09-03', keterangan: 'BIAYA ADM', debit: 30000, kredit: 0, entitas: 'PT_ALYSSA_AUTO_LOGISTIK' },
+];
+
+test('tanpa pilihan entitas, seluruh perusahaan ikut tampil', () => {
+  assert.equal(saring(duaEntitas, {}).length, 3);
+  assert.equal(saring(duaEntitas, { entitas: null }).length, 3);
+});
+
+test('KAIDAH: memilih satu entitas menghilangkan transaksi entitas lain', () => {
+  // Inilah seluruh maksud pemisahan ini: mencari SUGENG RIYANTO dari rekening
+  // CV tidak boleh memunculkan transfer PT, karena yang tampak sudah dibayar
+  // sebenarnya dibayar oleh perusahaan yang lain.
+  const cv = saring(duaEntitas, { entitas: 'CV_ALYSSA_TRANS_UTAMA' });
+  assert.equal(cv.length, 1);
+  assert.equal(cv[0].debit, 1750000);
+  assert.ok(cv.every((t) => t.entitas === 'CV_ALYSSA_TRANS_UTAMA'));
+});
+
+test('entitas bekerja bersama kriteria lain, bukan menggantikannya', () => {
+  const hasil = saring(duaEntitas, { cari: 'SUGENG', entitas: 'PT_ALYSSA_AUTO_LOGISTIK' });
+  assert.equal(hasil.length, 1);
+  assert.equal(hasil[0].debit, 2500000);
+});
+
+test('total per entitas menjumlahkan tepat satu perusahaan', () => {
+  // Kalau ringkasannya tidak ikut tersaring, layar menampilkan transaksi CV
+  // sedangkan totalnya masih menjumlahkan PT dan CV sekaligus.
+  assert.equal(ringkas(saring(duaEntitas, { entitas: 'PT_ALYSSA_AUTO_LOGISTIK' })).debit, 2530000);
+  assert.equal(ringkas(saring(duaEntitas, { entitas: 'CV_ALYSSA_TRANS_UTAMA' })).debit, 1750000);
+  assert.equal(ringkas(saring(duaEntitas, {})).debit, 4280000);
+});
+
+test('baris tanpa entitas tidak ikut saat satu entitas dipilih', () => {
+  // Setelah backfill tidak ada baris seperti ini, tetapi kalau suatu saat ada,
+  // ia tidak boleh muncul di bawah nama perusahaan mana pun.
+  const tanpa = [{ tanggal: '2026-09-01', keterangan: 'X', debit: 1, kredit: 0 }];
+  assert.equal(saring(tanpa, { entitas: 'PT_ALYSSA_AUTO_LOGISTIK' }).length, 0);
+  assert.equal(saring(tanpa, {}).length, 1);
+});
