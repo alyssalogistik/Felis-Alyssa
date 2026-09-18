@@ -5,7 +5,7 @@
 // salah — pembungkusan keterangan dan pemenggalan halaman — bisa diuji tanpa
 // membuat satu PDF pun.
 
-import { labelEntitas } from './entitas.js';
+import { ENTITAS, KODE_ENTITAS, labelEntitas } from './entitas.js';
 
 /** Titik (pt) A4 potret. 1 pt = 1/72 inci. */
 export const A4 = { lebar: 595.28, tinggi: 841.89 };
@@ -68,6 +68,27 @@ export function tanggalPendek(iso) {
  * Nilai yang tidak diisi ditulis "Semua" alih-alih dikosongkan, supaya pembaca
  * laporan tahu bahwa filternya memang tidak dipasang.
  */
+/**
+ * Nama perusahaan di kop dan kaki laporan.
+ *
+ * Mengikuti entitas yang sedang dipilih, bukan nama tetap. Laporan CV yang
+ * berkop PT akan salah diarsipkan oleh siapa pun yang memegangnya, dan
+ * kekeliruan itu baru ketahuan saat laporannya dipakai — kalau ketahuan.
+ *
+ * Tanpa pilihan entitas, KEDUA nama disebut. Itu bukan sekadar kejujuran
+ * kosmetik: laporan yang memuat transaksi dua perusahaan harus mengaku
+ * demikian di kopnya, karena angkanya tidak bisa dipakai atas nama salah satu.
+ */
+export function judulEntitas(kriteria = {}) {
+  if (kriteria.entitas) return labelEntitas(kriteria.entitas).toUpperCase();
+  return KODE_ENTITAS.map((kode) => ENTITAS[kode].toUpperCase()).join(' & ');
+}
+
+/** Bentuk pendek untuk kaki halaman, yang ruangnya separuh lebar kertas. */
+export function judulEntitasPendek(kriteria = {}) {
+  return kriteria.entitas ? labelEntitas(kriteria.entitas) : 'PT Alyssa Auto Logistik & CV Alyssa Trans Utama';
+}
+
 export function keteranganFilter(kriteria = {}) {
   return [
     // Entitas ditaruh paling atas karena ia yang paling menentukan arti

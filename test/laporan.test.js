@@ -7,7 +7,8 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  rupiah, tanggalPendek, keteranganFilter, namaBerkas, bungkus, susunHalaman, totalkan, KOLOM,
+  rupiah, tanggalPendek, keteranganFilter, namaBerkas, bungkus, susunHalaman,
+  totalkan, KOLOM, judulEntitas, judulEntitasPendek, A4, MARGIN,
 } from '../src/rekonsiliasi/laporan.js';
 
 /** Pengukur palsu: setiap huruf selebar 5 pt. Cukup untuk menguji aturannya. */
@@ -148,4 +149,55 @@ test('lebar kolom pas di dalam margin A4', () => {
   const tersedia = 595.28 - 34 * 2;
   assert.ok(total <= tersedia, `${total} pt melebihi ${tersedia} pt`);
   assert.ok(total > tersedia - 20, `${total} pt menyisakan ruang terlalu banyak`);
+});
+
+// --- Nama perusahaan di kop dan kaki laporan --------------------------------
+
+test('KAIDAH: kop laporan mengikuti entitas yang dipilih', () => {
+  // Laporan CV yang berkop PT akan salah diarsipkan oleh siapa pun yang
+  // memegangnya, dan kekeliruan itu baru ketahuan saat laporannya dipakai —
+  // kalau ketahuan.
+  assert.equal(judulEntitas({ entitas: 'CV_ALYSSA_TRANS_UTAMA' }), 'CV ALYSSA TRANS UTAMA');
+  assert.equal(judulEntitas({ entitas: 'PT_ALYSSA_AUTO_LOGISTIK' }), 'PT ALYSSA AUTO LOGISTIK');
+});
+
+test('KAIDAH: tanpa pilihan entitas, KEDUA nama disebut', () => {
+  // Laporan yang memuat transaksi dua perusahaan harus mengaku demikian di
+  // kopnya: angkanya tidak bisa dipakai atas nama salah satu.
+  const kop = judulEntitas({});
+  assert.match(kop, /PT ALYSSA AUTO LOGISTIK/);
+  assert.match(kop, /CV ALYSSA TRANS UTAMA/);
+  assert.equal(judulEntitas({}), judulEntitas({ entitas: null }));
+});
+
+test('kaki halaman memakai bentuk pendek yang muat separuh lebar kertas', () => {
+  assert.equal(judulEntitasPendek({ entitas: 'CV_ALYSSA_TRANS_UTAMA' }), 'CV Alyssa Trans Utama');
+  assert.match(judulEntitasPendek({}), /PT .* & CV /);
+});
+
+test('kop dan kaki diukur, bukan dikira-kira', async () => {
+  // Teks yang lebih lebar dari ruangnya tidak membungkus melainkan terpotong
+  // diam-diam — nama perusahaan yang terpenggal separuh lebih buruk daripada
+  // tidak ada sama sekali.
+  const { default: PDFDocument } = await import('pdfkit');
+  const dok = new PDFDocument({ size: 'A4', margin: 0 });
+  const lebarIsi = A4.lebar - MARGIN * 2;
+
+  dok.font('Helvetica-Bold').fontSize(12);
+  for (const kriteria of [{}, { entitas: 'PT_ALYSSA_AUTO_LOGISTIK' }, { entitas: 'CV_ALYSSA_TRANS_UTAMA' }]) {
+    const teks = judulEntitas(kriteria);
+    assert.ok(dok.widthOfString(teks) <= lebarIsi, `kop meluber: ${teks}`);
+  }
+
+  dok.font('Helvetica').fontSize(7);
+  for (const kriteria of [{}, { entitas: 'CV_ALYSSA_TRANS_UTAMA' }]) {
+    const teks = `${judulEntitasPendek(kriteria)} - Audit Pembayaran Supplier`;
+    assert.ok(dok.widthOfString(teks) <= lebarIsi / 2, `kaki meluber: ${teks}`);
+  }
+});
+
+test('entitas disebut di keterangan filter laporan', () => {
+  const baris = keteranganFilter({ entitas: 'CV_ALYSSA_TRANS_UTAMA' });
+  assert.deepEqual(baris[0], ['Rekening', 'CV Alyssa Trans Utama']);
+  assert.deepEqual(keteranganFilter({})[0], ['Rekening', 'Semua entitas']);
 });

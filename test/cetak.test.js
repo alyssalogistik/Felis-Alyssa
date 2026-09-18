@@ -97,8 +97,28 @@ test('keterangan panjang tetap utuh walau dibungkus beberapa baris', async () =>
 
 test('footer dan nomor halaman tercetak', async () => {
   const [halaman] = await bacaBalik(await buatPdfLaporan(CONTOH, KRITERIA));
-  assert.match(halaman.teks, /PT Alyssa Auto Logistik - Audit Pembayaran Supplier/);
+  assert.match(halaman.teks, /Audit Pembayaran Supplier/);
   assert.match(halaman.teks, /Halaman 1 \/ 1/);
+});
+
+test('KAIDAH: kop dan kaki laporan menyebut entitas yang dipilih', async () => {
+  // Laporan CV yang berkop PT akan salah diarsipkan oleh siapa pun yang
+  // memegangnya. Ini bug yang benar-benar terjadi: nama perusahaannya
+  // tertanam di kode, sehingga laporan CV tetap berstempel PT.
+  const [cv] = await bacaBalik(await buatPdfLaporan(CONTOH, {
+    ...KRITERIA, entitas: 'CV_ALYSSA_TRANS_UTAMA',
+  }));
+  assert.match(cv.teks, /CV ALYSSA TRANS UTAMA/);
+  assert.doesNotMatch(cv.teks, /PT ALYSSA AUTO LOGISTIK/);
+  assert.match(cv.teks, /Rekening/);
+});
+
+test('KAIDAH: laporan tanpa pilihan entitas mengaku memuat keduanya', async () => {
+  // Angkanya tidak bisa dipakai atas nama salah satu perusahaan, jadi kopnya
+  // tidak boleh menyebut salah satu saja.
+  const [semua] = await bacaBalik(await buatPdfLaporan(CONTOH, KRITERIA));
+  assert.match(semua.teks, /PT ALYSSA AUTO LOGISTIK/);
+  assert.match(semua.teks, /CV ALYSSA TRANS UTAMA/);
 });
 
 test('transaksi banyak dipecah ke beberapa halaman A4', async () => {

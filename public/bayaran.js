@@ -9,6 +9,7 @@
 // penyimpanan tersendiri: rekening koran yang sudah diunggah kapan pun, lewat
 // menu mana pun, langsung bisa dicari di sini.
 
+import { judulEntitas } from '/laporan.js';
 import { aman, ambil, el, kosong, formatTanggalPolos, formatNominal, rupiah, tanggal } from './bantuan.js';
 
 const NAMA_BULAN = [
@@ -229,6 +230,7 @@ function gambarKopCetak(jumlah, ringkasan) {
   const namaBulan = nilai('bulan') ? NAMA_BULAN[Number(nilai('bulan')) - 1] : 'Semua';
 
   const pasangan = [
+    ['Rekening', judulEntitas({ entitas: nilai('entitas') })],
     ['Kata Kunci', nilai('cari') || 'Semua transaksi'],
     ['Bulan', namaBulan],
     ['Tahun', nilai('tahun') || 'Semua'],
@@ -241,7 +243,7 @@ function gambarKopCetak(jumlah, ringkasan) {
   ];
 
   kotak.innerHTML = `
-    <h1>PT ALYSSA AUTO LOGISTIK</h1>
+    <h1>${aman(judulEntitas({ entitas: nilai('entitas') }))}</h1>
     <h2>AUDIT PEMBAYARAN SUPPLIER / MUTASI REKENING</h2>
     <dl>${pasangan.map(([k, v]) => `<div><dt>${aman(k)}</dt><dd>${aman(v)}</dd></div>`).join('')}</dl>`;
 }

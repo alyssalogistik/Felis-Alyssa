@@ -14,9 +14,13 @@ app.use(express.json({ limit: '1mb' }));
 // menghasilkan dua berkas yang harus dijaga sama, dan yang satu pasti pernah
 // tertinggal — lalu daftar perusahaan di layar berbeda dari yang diterima
 // server, tanpa satu pun galat. Jadi berkasnya disajikan, bukan digandakan.
-app.get('/entitas.js', (_req, res) =>
-  res.type('application/javascript').sendFile(join(akar, 'src/rekonsiliasi/entitas.js'))
-);
+// laporan.js mengimpor './entitas.js', dan pada alamat ini impor itu jatuh
+// tepat ke /entitas.js di bawahnya — jadi keduanya cukup disajikan apa adanya.
+for (const berkas of ['entitas.js', 'laporan.js']) {
+  app.get(`/${berkas}`, (_req, res) =>
+    res.type('application/javascript').sendFile(join(akar, 'src/rekonsiliasi', berkas))
+  );
+}
 
 app.use(express.static(join(akar, 'public')));
 
