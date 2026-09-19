@@ -38,6 +38,7 @@
       <a href="#/audit" class="pintas"><span>🔍</span>Audit</a>
       <a href="#/buat" class="pintas"><span>➕</span>Buat</a>
       <a href="#/rekonsiliasi" class="pintas"><span>🏦</span>Rekon Bank</a>
+      <a href="#/mekari" class="pintas"><span>🧾</span>Audit Mekari</a>
     </nav>
 
     <h2 class="judul">Ringkasan Pengiriman</h2>
@@ -619,6 +620,88 @@
       <button type="button" id="konfirmasi-hapus" class="tombol tombol-bahaya">Ya, hapus</button>
     </div>
   </dialog>
+
+
+  <!-- Audit Data Mekari -->
+  <section id="tampilan-mekari" class="tampilan" hidden>
+    <h2 class="judul">🧾 Audit Data Mekari</h2>
+
+    <div class="panel">
+      <h3>Impor Ekspor Mekari</h3>
+      <p class="keterangan-panel">
+        Berkas Excel laporan <b>Purchases by Supplier</b> dari Mekari Jurnal.
+        Data aslinya disimpan apa adanya; hasil ekstraksi dan temuan bisa
+        dihitung ulang kapan saja tanpa mengubahnya.
+      </p>
+
+      <!-- Wajib dipilih sebelum berkas bisa dipilih. Tanpa penanda perusahaan,
+           pembelian CV akan tercatat sebagai milik PT dan bercampur di temuan
+           tanpa satu pun gejala. -->
+      <label>Pembelian milik siapa?
+        <select id="entitas-mekari" required>
+          <option value="">— pilih dulu —</option>
+          <option value="PT_ALYSSA_AUTO_LOGISTIK">PT Alyssa Auto Logistik</option>
+          <option value="CV_ALYSSA_TRANS_UTAMA">CV Alyssa Trans Utama</option>
+        </select>
+      </label>
+
+      <label class="unggah">
+        <input type="file" id="berkas-mekari" accept=".xlsx,.csv" hidden disabled>
+        <span class="tombol tombol-blok">+ Upload Excel Mekari</span>
+      </label>
+      <p id="status-mekari" class="status-unggah">Belum ada file</p>
+      <p id="pesan-mekari" class="pesan" hidden></p>
+
+      <details class="lipat lipat-dalam">
+        <summary>Riwayat impor</summary>
+        <div id="riwayat-mekari"></div>
+      </details>
+    </div>
+
+    <div class="panel">
+      <h3>Ringkasan</h3>
+      <label>Perusahaan
+        <select id="filter-entitas-mekari">
+          <option value="">Semua</option>
+          <option value="PT_ALYSSA_AUTO_LOGISTIK">PT Alyssa Auto Logistik</option>
+          <option value="CV_ALYSSA_TRANS_UTAMA">CV Alyssa Trans Utama</option>
+        </select>
+      </label>
+      <div class="angka" id="ringkasan-mekari" aria-live="polite"></div>
+    </div>
+
+    <div class="panel">
+      <h3>Potensi Duplikasi</h3>
+      <p class="keterangan-panel">
+        Daftar ini <b>tidak menyatakan dobel bayar</b>. Setiap baris adalah
+        sepasang transaksi yang cukup mirip untuk perlu dilihat mata, beserta
+        alasan kenapa ditandai. Keputusannya milik pemeriksa.
+      </p>
+
+      <div class="sejajar">
+        <label>Status
+          <select id="filter-status-mekari">
+            <option value="">Semua</option>
+            <option value="BELUM" selected>Belum diperiksa</option>
+            <option value="PERLU_TINDAK_LANJUT">Perlu tindak lanjut</option>
+            <option value="TERKONFIRMASI_DUPLIKAT">Terkonfirmasi duplikat</option>
+            <option value="WAJAR">Wajar</option>
+          </select>
+        </label>
+        <label>Ambang skor
+          <input id="ambang-mekari" type="number" min="1" max="30" step="1" value="6"
+                 inputmode="numeric">
+        </label>
+      </div>
+      <button id="hitung-mekari" class="tombol-lembut" type="button">Hitung ulang temuan</button>
+
+      <p id="pesan-temuan-mekari" class="pesan" hidden></p>
+      <div id="daftar-temuan-mekari" class="daftar" aria-live="polite"></div>
+      <button id="muat-temuan-mekari" class="tombol-lembut" type="button" hidden>
+        Muat lebih banyak
+      </button>
+    </div>
+  </section>
 
 </main>
 

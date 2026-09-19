@@ -704,3 +704,66 @@ dialog .tombol-lembut, dialog .tombol { margin-top: 0; }
    belakangan setelah berkas telanjur dipilih. */
 .unggah.terkunci { opacity: .45; cursor: not-allowed; }
 .unggah.terkunci .tombol { pointer-events: none; }
+
+/* --- Audit Data Mekari ---------------------------------------------------- */
+
+/* Kartu rupiah di dasbor memuat teks jauh lebih panjang daripada kartu jumlah
+   di Beranda ("Rp 667.200.000" lawan "125"). Tiga kolom tetap membuat kartunya
+   melebar keluar panel, jadi grid-nya menyesuaikan lebar layar sendiri.
+   min-width: 0 wajib: tanpa itu kolom 1fr menolak menyempit di bawah lebar
+   teksnya dan meluber, bukan mengecil. */
+#ringkasan-mekari { grid-template-columns: repeat(auto-fit, minmax(128px, 1fr)); }
+#ringkasan-mekari .angka-kartu { min-width: 0; }
+#ringkasan-mekari .angka-kartu b {
+  font-size: 17px; overflow-wrap: anywhere; font-variant-numeric: tabular-nums;
+}
+/* Kartu rupiah memakai dua kolom. Angka yang terpotong di tengah
+   ("Rp 667.200.0 / 00") terbaca sebagai dua angka berbeda sekilas pandang. */
+#ringkasan-mekari .kartu-rupiah { grid-column: span 2; }
+
+/* Baris alasan: kenapa sepasang transaksi ditandai. Warnanya membedakan yang
+   SAMA dari yang BERBEDA, karena justru perbedaannya yang sering jadi alasan
+   sebuah pasangan perlu diperiksa — invoice berbeda pada barang yang sama. */
+.temuan-alasan { display: flex; flex-wrap: wrap; gap: 6px; margin: 4px 0 14px; font-size: 12px; }
+.alasan { white-space: nowrap; }
+.alasan-sama   { color: var(--hijau); }
+.alasan-beda,
+.alasan-mirip  { color: var(--aksen); font-weight: 600; }
+.alasan-netral { color: var(--teks-redup); }
+.alasan-pisah  { color: var(--garis); }
+
+.temuan > summary { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.temuan-skor {
+  background: rgba(245,165,36,.16); color: var(--aksen);
+  border-radius: 7px; padding: 2px 8px; font-size: 12px; font-weight: 700;
+}
+.temuan-nilai { font-variant-numeric: tabular-nums; font-weight: 600; }
+.temuan-judul { flex-basis: 100%; color: var(--teks-redup); font-size: 12px; font-weight: 400; }
+
+/* Berdampingan di layar lebar, bertumpuk di ponsel. Perbandingan yang harus
+   digeser ke samping tidak akan dibaca. */
+.banding { display: grid; grid-template-columns: 1fr; gap: 10px; }
+@media (min-width: 620px) { .banding { grid-template-columns: 1fr 1fr; } }
+
+.banding-sisi {
+  background: var(--kartu); border: 1px solid var(--garis);
+  border-radius: 11px; padding: 12px; font-size: 13px;
+}
+.banding-baris { display: flex; justify-content: space-between; gap: 10px; padding: 3px 0; }
+.banding-baris span { color: var(--teks-redup); }
+.banding-baris b { font-variant-numeric: tabular-nums; text-align: right; }
+/* Field yang berbeda diberi tanda, bukan sekadar dibiarkan berbeda: mata tidak
+   menemukan selisih satu digit di antara sepuluh baris angka. */
+.banding-baris.beda b { color: var(--aksen); }
+.banding-keterangan {
+  margin-top: 8px; padding-top: 8px; border-top: 1px solid var(--garis);
+  color: var(--teks-redup); font-size: 12px; white-space: pre-wrap;
+}
+
+.temuan-kendali { margin-top: 14px; }
+.temuan-kendali .pesan { margin-top: 10px; }
+
+.lencana.st-BELUM                  { background: rgba(245,165,36,.16);  color: var(--aksen); }
+.lencana.st-WAJAR                  { background: rgba(61,220,132,.12);  color: var(--hijau); }
+.lencana.st-PERLU_TINDAK_LANJUT    { background: rgba(169,112,255,.16); color: var(--ungu); }
+.lencana.st-TERKONFIRMASI_DUPLIKAT { background: rgba(255,92,92,.12);   color: var(--merah); }

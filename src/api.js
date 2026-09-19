@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { createAdminClient } from './supabase.js';
 import rekonsiliasi from './rekonsiliasi/api.js';
+import mekari from './mekari/api.js';
 
 const db = createAdminClient();
 
@@ -166,5 +167,6 @@ api.get('/trip', jalur(async (_req, res) => {
 }));
 
 api.use('/rekonsiliasi', rekonsiliasi);
+api.use('/mekari', mekari);
 
 export default api;

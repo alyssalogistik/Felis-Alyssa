@@ -1124,6 +1124,180 @@ as $fn$
     and (p_sampai  is null or a.tanggal_invoice <= p_sampai)
     and (p_entitas is null or a.entitas = p_entitas);
 $fn$;
+--
+--
+create table if not exists mekari_impor (
+  id             uuid primary key default gen_random_uuid(),
+  nama_berkas    text not null,
+  hash_berkas    text not null,
+  entitas        text not null check (entitas in (
+                   'PT_ALYSSA_AUTO_LOGISTIK', 'CV_ALYSSA_TRANS_UTAMA')),
+  sheet          text,
+  baris_header   int,
+  periode_mulai  date,
+  periode_selesai date,
+  jumlah_baris       int not null default 0,
+  jumlah_baru        int not null default 0,
+  jumlah_sudah_ada   int not null default 0,
+  jumlah_bermasalah  int not null default 0,
+  nilai              numeric(16, 2) not null default 0,
+  status             text,
+  diunggah_pada  timestamptz not null default now()
+);
+create index if not exists idx_mekari_impor_waktu   on mekari_impor (diunggah_pada desc);
+create index if not exists idx_mekari_impor_hash    on mekari_impor (hash_berkas);
+create index if not exists idx_mekari_impor_entitas on mekari_impor (entitas);
+--
+create table if not exists mekari_baris (
+  id             uuid primary key default gen_random_uuid(),
+  impor_id       uuid not null references mekari_impor(id) on delete cascade,
+  entitas        text not null check (entitas in (
+                   'PT_ALYSSA_AUTO_LOGISTIK', 'CV_ALYSSA_TRANS_UTAMA')),
+  baris_sumber   int not null,
+  berkas_sumber  text,
+  supplier       text not null default '',
+  tanggal        date,
+  tanggal_ambigu boolean not null default false,
+  jenis_transaksi text,
+  no_invoice     text,
+  produk         text,
+  keterangan     text not null default '',
+  kuantitas      numeric(14, 2) not null default 0,
+  satuan         text,
+  harga          numeric(16, 2) not null default 0,
+  jumlah         numeric(16, 2) not null default 0,
+  masalah        text[] not null default '{}',
+  kembar_ke      int not null default 1,
+  bulan int generated always as (extract(month from tanggal)) stored,
+  tahun int generated always as (extract(year  from tanggal)) stored,
+  sidik text generated always as (
+    md5(
+      entitas || '|' ||
+      lower(regexp_replace(coalesce(supplier, ''), '\s+', ' ', 'g')) || '|' ||
+      coalesce((tanggal - date '1970-01-01')::text, '') || '|' ||
+      lower(coalesce(no_invoice, '')) || '|' ||
+      lower(coalesce(produk, '')) || '|' ||
+      lower(regexp_replace(coalesce(keterangan, ''), '\s+', ' ', 'g')) || '|' ||
+      coalesce(kuantitas, 0)::text || '|' ||
+      coalesce(harga, 0)::text || '|' ||
+      coalesce(jumlah, 0)::text || '|' ||
+      kembar_ke::text
+    )
+  ) stored,
+  dibuat_pada    timestamptz not null default now()
+);
+create unique index if not exists idx_mekari_baris_sidik    on mekari_baris (sidik);
+create index if not exists idx_mekari_baris_impor           on mekari_baris (impor_id);
+create index if not exists idx_mekari_baris_entitas         on mekari_baris (entitas);
+create index if not exists idx_mekari_baris_supplier        on mekari_baris (lower(supplier));
+create index if not exists idx_mekari_baris_tanggal         on mekari_baris (tanggal desc);
+create index if not exists idx_mekari_baris_periode         on mekari_baris (tahun, bulan);
+create index if not exists idx_mekari_baris_invoice         on mekari_baris (lower(no_invoice));
+--
+--
+create table if not exists mekari_pengenal (
+  id        uuid primary key default gen_random_uuid(),
+  baris_id  uuid not null references mekari_baris(id) on delete cascade,
+  entitas   text not null check (entitas in (
+              'PT_ALYSSA_AUTO_LOGISTIK', 'CV_ALYSSA_TRANS_UTAMA')),
+  nilai     text not null,
+  konteks   text not null default ''
+);
+create index if not exists idx_mekari_pengenal_baris   on mekari_pengenal (baris_id);
+create index if not exists idx_mekari_pengenal_entitas on mekari_pengenal (entitas);
+create index if not exists idx_mekari_pengenal_nilai on mekari_pengenal (nilai);
+--
+create table if not exists mekari_temuan (
+  id             uuid primary key default gen_random_uuid(),
+  entitas        text not null check (entitas in (
+                   'PT_ALYSSA_AUTO_LOGISTIK', 'CV_ALYSSA_TRANS_UTAMA')),
+  kunci_stabil   text not null,
+  baris_a        uuid not null references mekari_baris(id) on delete cascade,
+  baris_b        uuid not null references mekari_baris(id) on delete cascade,
+  skor           int not null default 0,
+  alasan         jsonb not null default '[]'::jsonb,
+  ringkasan_alasan text,
+  nilai_berisiko numeric(16, 2) not null default 0,
+  dihitung_pada  timestamptz not null default now()
+);
+create unique index if not exists idx_mekari_temuan_kunci   on mekari_temuan (kunci_stabil);
+create index if not exists idx_mekari_temuan_entitas        on mekari_temuan (entitas);
+create index if not exists idx_mekari_temuan_skor           on mekari_temuan (skor desc);
+--
+--
+--
+create table if not exists mekari_periksa (
+  kunci_stabil   text primary key,
+  entitas        text not null check (entitas in (
+                   'PT_ALYSSA_AUTO_LOGISTIK', 'CV_ALYSSA_TRANS_UTAMA')),
+  status         text not null default 'BELUM' check (status in (
+                   'BELUM', 'WAJAR', 'PERLU_TINDAK_LANJUT', 'TERKONFIRMASI_DUPLIKAT')),
+  catatan        text,
+  diperiksa_oleh text,
+  diperiksa_pada timestamptz not null default now()
+);
+create index if not exists idx_mekari_periksa_status on mekari_periksa (entitas, status);
+--
+drop view if exists mekari_temuan_periksa;
+create view mekari_temuan_periksa as
+select
+  t.id,
+  t.entitas,
+  t.kunci_stabil,
+  t.baris_a,
+  t.baris_b,
+  t.skor,
+  t.alasan,
+  t.ringkasan_alasan,
+  t.nilai_berisiko,
+  t.dihitung_pada,
+  coalesce(p.status, 'BELUM') as status,
+  p.catatan,
+  p.diperiksa_oleh,
+  p.diperiksa_pada
+from mekari_temuan t
+left join mekari_periksa p on p.kunci_stabil = t.kunci_stabil;
+--
+drop function if exists ringkasan_mekari(text);
+create function ringkasan_mekari(p_entitas text default null)
+returns table (
+  transaksi        bigint,
+  nilai            numeric,
+  supplier         bigint,
+  produk           bigint,
+  invoice          bigint,
+  temuan           bigint,
+  nilai_berisiko   numeric,
+  belum_diperiksa  bigint
+)
+language sql
+stable
+set search_path = public
+as $fn$
+  select
+    (select count(*)                       from mekari_baris b
+      where p_entitas is null or b.entitas = p_entitas),
+    (select coalesce(sum(b.jumlah), 0)     from mekari_baris b
+      where p_entitas is null or b.entitas = p_entitas),
+    (select count(distinct lower(b.supplier)) from mekari_baris b
+      where (p_entitas is null or b.entitas = p_entitas) and coalesce(b.supplier, '') <> ''),
+    (select count(distinct lower(b.produk))   from mekari_baris b
+      where (p_entitas is null or b.entitas = p_entitas) and coalesce(b.produk, '') <> ''),
+    (select count(distinct lower(b.no_invoice)) from mekari_baris b
+      where (p_entitas is null or b.entitas = p_entitas) and coalesce(b.no_invoice, '') <> ''),
+    (select count(*)                       from mekari_temuan_periksa t
+      where p_entitas is null or t.entitas = p_entitas),
+    (select coalesce(sum(t.nilai_berisiko), 0) from mekari_temuan_periksa t
+      where (p_entitas is null or t.entitas = p_entitas) and t.status <> 'WAJAR'),
+    (select count(*)                       from mekari_temuan_periksa t
+      where (p_entitas is null or t.entitas = p_entitas) and t.status = 'BELUM')
+$fn$;
+--
+alter table mekari_impor    enable row level security;
+alter table mekari_baris    enable row level security;
+alter table mekari_pengenal enable row level security;
+alter table mekari_temuan   enable row level security;
+alter table mekari_periksa  enable row level security;
 
 -- Setelah skema berubah, PostgREST masih memakai peta lama sampai diberi
 -- tahu. Tanpa ini tabel baru tetap dilaporkan "not found in the schema
