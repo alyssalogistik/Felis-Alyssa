@@ -732,7 +732,27 @@ dialog .tombol-lembut, dialog .tombol { margin-top: 0; }
 .alasan-netral { color: var(--teks-redup); }
 .alasan-pisah  { color: var(--garis); }
 
-.temuan > summary { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+/* display: flex menimpa display: list-item, dan itu MENGHAPUS segitiga
+   pembuka bawaan peramban. Tanpa penanda, kartu temuan tidak tampak bisa
+   dibuka sama sekali — dan perbandingan berdampingan, yang justru inti
+   halaman ini, tidak pernah terlihat siapa pun. Jadi penandanya digambar
+   sendiri. */
+.temuan > summary {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 8px;
+  position: relative; padding-left: 20px; cursor: pointer;
+}
+.temuan > summary::marker { content: ''; }
+.temuan > summary::-webkit-details-marker { display: none; }
+.temuan > summary::before {
+  content: ''; position: absolute; left: 3px; top: 7px;
+  width: 7px; height: 7px;
+  border-right: 2px solid var(--aksen); border-bottom: 2px solid var(--aksen);
+  transform: rotate(-45deg); transition: transform .15s ease;
+}
+.temuan[open] > summary::before { transform: rotate(45deg); top: 5px; }
+
+.temuan-petunjuk { color: var(--aksen); font-size: 11px; font-weight: 600; }
+.temuan[open] .temuan-petunjuk { display: none; }
 .temuan-skor {
   background: rgba(245,165,36,.16); color: var(--aksen);
   border-radius: 7px; padding: 2px 8px; font-size: 12px; font-weight: 700;
