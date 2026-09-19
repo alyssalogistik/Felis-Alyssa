@@ -64,6 +64,7 @@ Tanpa framework dan tanpa build step — disengaja, jangan ditambahkan tanpa ala
 | `src/api.js` | Router. Semua akses database lewat sini |
 | `src/supabase.js` | Client publik (anon) dan admin (service_role), dipisah |
 | `public/` | SPA vanilla JS, hash router |
+| `src/mekari/` | Audit Data Mekari. Terpisah penuh dari rekonsiliasi |
 | `supabase/migrations/` | Skema, dijalankan berurutan lewat SQL Editor |
 
 ## Keamanan
@@ -573,6 +574,87 @@ benar bahkan sebelum baris terakhir selesai dimuat.
 Tidak ada satu pun nilai transaksi yang tertanam di kode. Kalau suatu saat ada
 yang tergoda menambahkan contoh untuk mempermudah pengembangan, ingat bahwa
 halaman ini dipakai memutuskan apakah seseorang sudah dibayar.
+
+## Audit Data Mekari
+
+Modul terpisah penuh dari Rekonsiliasi. Sumbernya ekspor Excel Mekari Jurnal
+(`Purchases by Supplier`), dan tidak ada satu baris pun yang masuk
+`transaksi_bank`. Yang dicarinya **tagihan yang berpotensi ganda**, bukan uang
+yang benar-benar keluar dua kali — untuk itu perlu disilangkan dengan mutasi
+bank, dan itu belum ada.
+
+Istilah di seluruh modul ini "potensi duplikasi" dan "perlu diperiksa". Tidak
+pernah "dobel bayar": yang berhak menyatakan itu auditor, sesudah melihat kedua
+barisnya berdampingan.
+
+### Angka tidak boleh membuka gerbang
+
+Godaan pertamanya mengelompokkan baris yang "supplier sama + produk sama +
+nominal sama + tanggal sama". Itu diukur terhadap ekspor sungguhan dan hasilnya
+tidak bisa dipakai: dari 116 baris, **775 pasangan tertandai dan 110 baris (95%)
+terlibat**.
+
+Sebabnya harga adalah **daftar tarif, bukan sidik jari**. Di berkas yang sama
+hanya ada 18 nilai nominal berbeda untuk 116 baris — Rp 6.500.000 muncul 44 kali
+karena itu tarif satu rute. Kuantitas bernilai 1 pada 91% baris, dan hanya ada
+13 tanggal berbeda.
+
+Jadi yang boleh membuka gerbang hanya **identitas**: deskripsi yang sama persis,
+atau tanda pengenal yang sama. Supplier, produk, nominal, harga, kuantitas, dan
+tanggal tidak pernah membuat sepasang baris dibandingkan — mereka hanya menambah
+skor sesudah gerbangnya terbuka. Dengan gerbang itu, berkas yang sama
+menghasilkan 13 temuan atas 26 baris.
+
+### Pengenal ditemukan dari kejarangan, bukan dari daftar pola
+
+`pengenal.js` tidak tahu apa-apa soal kendaraan, dan itu disengaja. Yang dicari
+token yang mengandung angka, panjang ≥ 3, dan jarang muncul di batch itu (≤ 2%
+baris). Nomor rangka, nomor seri mesin, nomor kontrak, nomor batch, dan nomor
+tiket semuanya lolos lewat aturan yang sama — sehingga ketika yang diaudit bukan
+kendaraan, mesinnya tetap bekerja tanpa satu baris pun diubah.
+
+Daftar pola akan menuntut penambahan setiap kali jenis data baru masuk, dan yang
+lupa ditambahkan gagal diam-diam: barisnya tidak pernah dibandingkan dengan apa
+pun, dan tagihan ganda di dalamnya tidak pernah muncul sebagai temuan.
+
+**Konteks token ikut dibandingkan.** Token telanjang `1104` cocok pada
+`B 1104 DKN` maupun `B 1104 DKM` — dua kendaraan berbeda; dua pasang seperti itu
+ada di ekspor sungguhan. Yang konteksnya berbeda **tetap dilaporkan** dengan skor
+lebih rendah, tidak dibuang: melewatkan tagihan ganda jauh lebih mahal daripada
+satu baris yang perlu dilihat mata.
+
+### Yang mudah terlewat
+
+- **`kembar_ke` wajib, dan alasannya kritis.** Baris 120 dan 121 di ekspor
+  sungguhan identik byte demi byte — dan **justru itulah temuan berskor
+  tertinggi**. Dedup baris yang naif akan menghapus barang buktinya sendiri.
+- **Nilai baris dari `Jumlah Tagihan`, tidak pernah dari kolom `Total`.** Kolom
+  `Total` di ekspor Mekari jumlah **kumulatif berjalan**; memakainya akan
+  menggelembungkan tiap baris mengikuti posisinya, dan baris terakhir bernilai
+  seluruh laporan.
+- **Nama supplier hanya ditulis sekali di baris kelompok**, bukan per baris.
+  Tanpa dibawa turun, seluruh baris di bawahnya kehilangan suppliernya.
+- **Baris kaki (`Total Pembelian`, `Grand Total`) disaring.** Nilainya sah tetapi
+  penjumlahan baris di atasnya; ikut tersimpan berarti satu berkas tampak memuat
+  pembelian berkali lipat.
+- **`mekari_periksa` sengaja tanpa kunci asing ke `mekari_temuan`.** Menjalankan
+  ulang mesin menghapus dan menulis ulang seluruh temuan; dengan kunci asing
+  beserta cascade, setiap pergeseran ambang akan menghapus seluruh hasil
+  pemeriksaan manusia — dan yang hilang bukan data yang bisa diurai ulang,
+  melainkan pekerjaan orang. Penghubungnya `kunci_stabil`.
+- **Nihil hasil tidak pernah dinyatakan sebagai "tidak ada duplikasi".** Mesin
+  hanya membandingkan yang berbagi identitas; sepasang tagihan ganda yang
+  deskripsinya ditulis sama sekali berbeda tidak akan muncul.
+- **Kelompok lebih besar dari `BATAS_KELOMPOK` dilaporkan utuh, bukan dijabarkan
+  jadi pasangan.** Deskripsi yang berulang ratusan kali adalah baris template,
+  bukan ratusan tagihan ganda; menjabarkannya mengubur temuan sungguhan.
+
+### Pemisahan PT/CV
+
+Mengikuti `src/rekonsiliasi/entitas.js` yang sudah ada — entitas wajib disebut
+saat unggah tanpa nilai bawaan, filter Semua/PT/CV, dan mesin tidak pernah
+mencocokkan lintas entitas. Menghitung ulang satu entitas tidak menyentuh temuan
+entitas lain.
 
 ## Cetak dan Simpan PDF
 

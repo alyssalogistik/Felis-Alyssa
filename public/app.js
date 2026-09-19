@@ -10,6 +10,7 @@ import { pasangKendaliBayaran, cariBayaran, cariSupplier } from './bayaran.js';
 import { pasangKendaliSupplier, muatSupplier } from './supplier.js';
 import { pasangKendaliImpor } from './impor.js';
 import { pasangKendaliPembayaran, muatPembayaranManual } from './pembayaran.js';
+import { pasangKendaliMekari, muatMekari } from './mekari.js';
 
 const STATUS = {
   baru:       'Baru',
@@ -222,7 +223,7 @@ async function muatTrip() {
 
 // --- Router -----------------------------------------------------------------
 
-const TAMPILAN = ['beranda', 'pesanan', 'detail', 'buat', 'lacak', 'trip', 'rekonsiliasi', 'audit'];
+const TAMPILAN = ['beranda', 'pesanan', 'detail', 'buat', 'lacak', 'trip', 'rekonsiliasi', 'audit', 'mekari'];
 
 function arahkan() {
   const [jalur, kueri] = (location.hash.slice(2) || 'beranda').split('?');
@@ -240,6 +241,7 @@ function arahkan() {
   if (nama === 'beranda') muatBeranda();
   else if (nama === 'rekonsiliasi') muatRekonsiliasi();
   else if (nama === 'audit') { muatAudit(); muatSupplier(); muatPembayaranManual(); cariBayaran(); }
+  else if (nama === 'mekari') muatMekari();
   else if (nama === 'trip') muatTrip();
   else if (nama === 'detail') muatDetail(bagian[1]);
   else if (nama === 'pesanan') {
@@ -338,6 +340,7 @@ pasangKendaliRekonsiliasi();
 pasangKendaliAudit();
 pasangKendaliBayaran();
 pasangKendaliSupplier(cariSupplier);
+pasangKendaliMekari();
 
 // Menghapus satu unggahan mengubah lebih dari daftarnya sendiri: jumlah
 // transaksi, daftar supplier, dan ringkasan rekonsiliasi semuanya ikut
