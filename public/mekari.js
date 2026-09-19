@@ -115,7 +115,9 @@ function kartuTemuan(t) {
         <span class="temuan-skor">Skor ${aman(t.skor)}</span>
         <span class="temuan-nilai">${aman(rupiah.format(t.nilai_berisiko ?? 0))}</span>
         <span class="lencana st-${aman(status)}">${aman(LABEL_STATUS[status] ?? status)}</span>
-        <span class="temuan-judul">${aman(t.a?.supplier ?? '')} &middot; baris #${aman(t.a?.baris_sumber ?? '?')} vs #${aman(t.b?.baris_sumber ?? '?')}</span>
+        <span class="temuan-judul">${aman(t.a?.supplier ?? '')} &middot; baris #${aman(t.a?.baris_sumber ?? '?')} vs #${aman(t.b?.baris_sumber ?? '?')}
+          <span class="temuan-petunjuk">&nbsp; Ketuk untuk membandingkan</span>
+        </span>
       </summary>
 
       <p class="temuan-alasan">${barisAlasan(t.alasan)}</p>
