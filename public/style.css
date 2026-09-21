@@ -16,6 +16,14 @@
 
 * { box-sizing: border-box; }
 
+/* Atribut [hidden] harus benar-benar menyembunyikan.
+   Peramban menerapkannya lewat stylesheet user-agent, yang KALAH dari kelas
+   apa pun yang menyetel display — dan hampir setiap komponen di berkas ini
+   menyetel display. Akibatnya elemen ber-[hidden] tetap tergambar. Di halaman
+   biasa itu cuma jelek; pada gerbang masuk dan menu khusus Owner, itu berarti
+   layar yang seharusnya tertutup malah terlihat. */
+[hidden] { display: none !important; }
+
 body {
   margin: 0;
   padding-bottom: 88px;
@@ -787,3 +795,51 @@ dialog .tombol-lembut, dialog .tombol { margin-top: 0; }
 .lencana.st-WAJAR                  { background: rgba(61,220,132,.12);  color: var(--hijau); }
 .lencana.st-PERLU_TINDAK_LANJUT    { background: rgba(169,112,255,.16); color: var(--ungu); }
 .lencana.st-TERKONFIRMASI_DUPLIKAT { background: rgba(255,92,92,.12);   color: var(--merah); }
+
+/* --- Gerbang masuk -------------------------------------------------------- */
+
+/* Menutupi seluruh layar, bukan sekadar menyembunyikan menu. Halaman yang
+   isinya masih tergambar di belakang lapisan tembus pandang tetap bisa
+   terbaca dan terfoto. */
+.gerbang {
+  position: fixed; inset: 0; z-index: 100;
+  display: grid; place-items: center;
+  padding: 24px 16px;
+  background: var(--latar);
+  overflow-y: auto;
+}
+.gerbang-kotak {
+  width: 100%; max-width: 360px;
+  background: var(--kartu); border: 1px solid var(--garis);
+  border-radius: 16px; padding: 24px;
+  text-align: center;
+}
+.gerbang-kotak .lambang { margin: 0 auto 14px; }
+.gerbang-kotak h1 { margin: 0 0 6px; font-size: 19px; }
+.gerbang-sub { margin: 0 0 20px; color: var(--teks-redup); font-size: 13px; }
+.gerbang-kotak .formulir { text-align: left; }
+.gerbang-kotak .pesan { margin-top: 14px; }
+.gerbang-kaki { margin: 18px 0 0; color: var(--teks-redup); font-size: 11px; }
+
+/* Gulir halaman di belakang gerbang dimatikan supaya isi yang belum boleh
+   dilihat tidak bisa digeser ke layar dari balik lapisannya. */
+body.terkunci { overflow: hidden; }
+
+.sesi-pengguna {
+  margin-left: auto; display: flex; align-items: center; gap: 8px;
+  font-size: 11px; color: var(--teks-redup);
+}
+
+/* --- Pengguna & Akses ----------------------------------------------------- */
+
+.pilihan { display: flex; align-items: center; gap: 8px; font-size: 14px; }
+.pilihan input { width: auto; margin: 0; }
+
+/* Tabel pengguna punya delapan kolom; di ponsel digulir menyamping daripada
+   dipadatkan sampai tidak terbaca. */
+.gulir-x { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+
+.aksi-pengguna { display: flex; flex-wrap: wrap; gap: 6px; }
+.tombol-kecil.bahaya { color: var(--merah); border-color: rgba(255,92,92,.35); }
+.tombol-kecil.bahaya:hover, .tombol-kecil.bahaya:focus-visible { border-color: var(--merah); }
+.redup { color: var(--teks-redup); font-size: 12px; }

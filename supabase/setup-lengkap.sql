@@ -1298,6 +1298,130 @@ alter table mekari_baris    enable row level security;
 alter table mekari_pengenal enable row level security;
 alter table mekari_temuan   enable row level security;
 alter table mekari_periksa  enable row level security;
+--
+--
+create table if not exists profil_pengguna (
+  id             uuid primary key,
+  email          text not null unique,
+  nama           text not null check (length(trim(nama)) > 0),
+  peran          text not null check (peran in ('OWNER', 'AUDITOR')),
+  entitas_akses  text[] not null default '{}',
+  boleh_periksa  boolean not null default false,
+  status         text not null default 'AKTIF' check (status in ('AKTIF', 'NONAKTIF')),
+  harus_ganti_password boolean not null default true,
+  owner_utama    boolean not null default false,
+  terakhir_login timestamptz,
+  dibuat_pada    timestamptz not null default now(),
+  dibuat_oleh    uuid,
+  diubah_pada    timestamptz,
+  diubah_oleh    uuid,
+  constraint entitas_akses_dikenali check (
+    entitas_akses <@ array['PT_ALYSSA_AUTO_LOGISTIK', 'CV_ALYSSA_TRANS_UTAMA']::text[]
+  )
+);
+create index if not exists idx_profil_email  on profil_pengguna (lower(email));
+create index if not exists idx_profil_peran  on profil_pengguna (peran, status);
+create unique index if not exists idx_profil_owner_utama
+  on profil_pengguna ((1)) where owner_utama;
+--
+--
+create table if not exists jejak_aktivitas (
+  id             bigserial primary key,
+  waktu          timestamptz not null default now(),
+  pengguna_id    uuid,
+  pengguna_email text not null default '-',
+  pengguna_nama  text,
+  peran          text,
+  aksi           text not null,
+  entitas        text,
+  objek          text,
+  objek_id       text,
+  detail         jsonb not null default '{}'::jsonb,
+  ip             text,
+  peramban       text
+);
+create index if not exists idx_jejak_waktu    on jejak_aktivitas (waktu desc);
+create index if not exists idx_jejak_pengguna on jejak_aktivitas (pengguna_id);
+create index if not exists idx_jejak_aksi     on jejak_aktivitas (aksi);
+create index if not exists idx_jejak_entitas  on jejak_aktivitas (entitas);
+--
+create or replace function jejak_hanya_tambah()
+returns trigger
+language plpgsql
+set search_path = public
+as $fn$
+begin
+  raise exception 'jejak_aktivitas hanya bisa ditambah, tidak bisa diubah atau dihapus';
+end
+$fn$;
+drop trigger if exists trg_jejak_hanya_tambah on jejak_aktivitas;
+create trigger trg_jejak_hanya_tambah
+  before update or delete on jejak_aktivitas
+  for each row execute function jejak_hanya_tambah();
+create or replace function lindungi_owner_utama()
+returns trigger
+language plpgsql
+set search_path = public
+as $fn$
+begin
+  if tg_op = 'DELETE' then
+    if old.owner_utama then
+      raise exception 'Owner utama tidak bisa dihapus';
+    end if;
+    return old;
+  end if;
+  if old.owner_utama then
+    if new.owner_utama is distinct from true then
+      raise exception 'Penanda owner utama tidak bisa dilepas';
+    end if;
+    if new.peran <> 'OWNER' then
+      raise exception 'Owner utama tidak bisa diturunkan perannya';
+    end if;
+    if new.status <> 'AKTIF' then
+      raise exception 'Owner utama tidak bisa dinonaktifkan';
+    end if;
+  end if;
+  return new;
+end
+$fn$;
+drop trigger if exists trg_lindungi_owner_utama on profil_pengguna;
+create trigger trg_lindungi_owner_utama
+  before update or delete on profil_pengguna
+  for each row execute function lindungi_owner_utama();
+--
+create or replace function sisakan_satu_owner()
+returns trigger
+language plpgsql
+set search_path = public
+as $fn$
+declare
+  tersisa int;
+  masih_owner_aktif boolean;
+begin
+  if old.peran <> 'OWNER' or old.status <> 'AKTIF' then
+    return coalesce(new, old);
+  end if;
+  masih_owner_aktif := tg_op = 'UPDATE'
+    and new.peran = 'OWNER' and new.status = 'AKTIF';
+  if masih_owner_aktif then
+    return new;
+  end if;
+  select count(*) into tersisa
+  from profil_pengguna
+  where peran = 'OWNER' and status = 'AKTIF' and id <> old.id;
+  if tersisa = 0 then
+    raise exception 'Harus selalu ada minimal satu OWNER yang aktif';
+  end if;
+  return coalesce(new, old);
+end
+$fn$;
+drop trigger if exists trg_sisakan_satu_owner on profil_pengguna;
+create trigger trg_sisakan_satu_owner
+  after update or delete on profil_pengguna
+  for each row execute function sisakan_satu_owner();
+--
+alter table profil_pengguna enable row level security;
+alter table jejak_aktivitas enable row level security;
 
 -- Setelah skema berubah, PostgREST masih memakai peta lama sampai diberi
 -- tahu. Tanpa ini tabel baru tetap dilaporkan "not found in the schema

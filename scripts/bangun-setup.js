@@ -27,6 +27,7 @@ const urutan = [
   '0008_pembayaran_manual.sql',
   '0009_entitas_rekening.sql',
   '0010_audit_mekari.sql',
+  '0011_pengguna_dan_jejak.sql',
 ];
 
 // Komentar dibuang supaya yang harus disalin lewat layar sentuh sependek
