@@ -14,7 +14,7 @@ import { pasangKendaliMekari, muatMekari } from './mekari.js';
 import {
   periksaSesi, terapkanGerbang, pasangKendaliMasuk, jalurPublik, adalahOwner,
 } from './masuk.js';
-import { pasangKendaliPengguna, muatPengguna, muatJejak } from './pengguna.js';
+import { pasangKendaliPengguna, muatPengguna, muatJejak, muatKunci } from './pengguna.js';
 
 const STATUS = {
   baru:       'Baru',
@@ -249,7 +249,7 @@ function arahkan() {
   // Halaman ini hanya berguna untuk Owner. Auditor yang mengetik alamatnya
   // langsung tetap sampai ke sini, dan melihat halaman kosong karena setiap
   // endpoint di baliknya menjawab 403.
-  if (nama === 'pengguna') { if (adalahOwner()) { muatPengguna(); muatJejak(); } return; }
+  if (nama === 'pengguna') { if (adalahOwner()) { muatPengguna(); muatKunci(); muatJejak(); } return; }
 
   if (nama === 'beranda') muatBeranda();
   else if (nama === 'rekonsiliasi') muatRekonsiliasi();

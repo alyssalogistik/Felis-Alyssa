@@ -31,11 +31,22 @@ export const AKSI = {
   DITOLAK: 'DITOLAK',
 };
 
-/** Alamat peminta, menembus proxy Railway. */
+/**
+ * Alamat peminta.
+ *
+ * `req.ip` milik Express, BUKAN nilai pertama dari X-Forwarded-For.
+ *
+ * Header itu ditulis berurutan: yang paling kiri berasal dari klien sendiri
+ * dan bisa diisi apa saja. Membacanya langsung berarti siapa pun bisa mengaku
+ * beralamat berbeda pada setiap permintaan — yang tidak seberapa untuk
+ * pencatatan, tetapi melumpuhkan pembatasan percobaan masuk: cukup mengganti
+ * satu header untuk mendapat jatah baru setiap kali.
+ *
+ * Express menghitungnya dengan benar selama `trust proxy` disetel sebanyak
+ * proxy yang benar-benar ada di depan aplikasi; lihat `src/server.js`.
+ */
 export function alamatIp(req) {
-  const teruskan = req.get?.('x-forwarded-for');
-  if (teruskan) return String(teruskan).split(',')[0].trim();
-  return req.ip ?? req.socket?.remoteAddress ?? null;
+  return req?.ip ?? req?.socket?.remoteAddress ?? null;
 }
 
 export function buatPencatat(db) {

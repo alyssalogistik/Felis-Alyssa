@@ -40,3 +40,27 @@ order by owner_utama desc, dibuat_pada;
 --   on conflict (id) do update set peran = 'OWNER', status = 'AKTIF';
 -- end
 -- $pulih$;
+
+-- ---------------------------------------------------------------------------
+-- 6. Owner terkunci karena terlalu banyak salah password
+--
+-- Kuncian PASTI berakhir sendiri, paling lama 30 menit. Bagian ini hanya untuk
+-- mempercepatnya. Tidak ada data yang hilang: tabelnya cuma menyimpan hitungan
+-- percobaan.
+-- ---------------------------------------------------------------------------
+
+-- Siapa yang sedang terkunci dan sampai kapan.
+select kunci, jenis, gagal, kunci_ke, terkunci_sampai,
+       greatest(0, ceil(extract(epoch from (terkunci_sampai - now())) / 60))::int as sisa_menit
+from percobaan_masuk
+where terkunci_sampai > now()
+order by terkunci_sampai desc;
+
+-- Membuka kuncian satu akun.
+-- delete from percobaan_masuk where kunci = 'akun:GANTI@EMAIL.ANDA';
+
+-- Membuka kuncian satu alamat IP.
+-- delete from percobaan_masuk where kunci = 'ip:1.2.3.4';
+
+-- Membuka semuanya. Aman: yang hilang hanya hitungan yang sedang berjalan.
+-- delete from percobaan_masuk;

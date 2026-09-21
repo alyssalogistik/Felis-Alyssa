@@ -7,6 +7,16 @@ import { skemaBelumSiap } from './skema.js';
 const akar = join(dirname(fileURLToPath(import.meta.url)), '..');
 const app = express();
 
+// Berapa proxy yang ada di depan aplikasi. Railway menaruh satu.
+//
+// Angka ini menentukan alamat mana yang dianggap alamat pemakai, dan itu
+// menjadi dasar pembatasan percobaan masuk. Terlalu besar berarti alamat yang
+// diaku klien ikut dipercaya, sehingga jatah percobaannya bisa disegarkan
+// hanya dengan mengganti satu header. Terlalu kecil berarti seluruh pemakai
+// tampak berasal dari alamat proxy yang sama, sehingga satu orang yang lupa
+// password bisa mengunci semuanya.
+app.set('trust proxy', Number(process.env.PROXY_HOPS ?? 1));
+
 app.use(express.json({ limit: '1mb' }));
 // Satu berkas aturan entitas, dipakai server DAN peramban.
 //

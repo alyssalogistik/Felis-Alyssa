@@ -178,6 +178,74 @@ jendela waktu di mana Owner sendiri terkunci di luar.
 **Gagal membaca berarti menyala, bukan terbuka.** `WAJIB_LOGIN=1` memaksanya
 menyala apa pun isi tabelnya.
 
+### Pembatasan percobaan masuk
+
+Dua ember dihitung terpisah, dan cukup salah satu penuh untuk menolak:
+
+| Ember | Batas | Jendela | Kuncian | Naik? |
+|---|---|---|---|---|
+| Per akun | 5 gagal | 15 menit | 15 menit | ya, maksimum 30 menit |
+| Per alamat IP | 20 gagal | 15 menit | 15 menit | tidak |
+
+**Per akun** menahan penebak yang membidik satu email dari banyak tempat; **per
+IP** menahan yang dari satu tempat mencoba banyak email. Yang satu saja selalu
+meninggalkan jalan bagi yang lain. Batas IP jauh lebih longgar karena satu
+kantor keluar lewat satu alamat: batas ketat di sana membuat satu orang yang
+lupa password mengunci seluruh rekannya.
+
+Aturannya di `src/akses/batas-masuk.js` — murni, tanpa I/O, sehingga lama
+kuncian bisa diuji tanpa menunggu waktu sungguhan berlalu.
+
+**Tidak ada kuncian permanen, dan itu wajib.** Pemilik project ini satu orang;
+akun yang terkunci selamanya karena salah ketik jauh lebih buruk daripada risiko
+yang dicegahnya. Lama kuncian berhenti naik di 30 menit — tanpa batas atas,
+penebak yang gigih bisa mengunci akun Owner berhari-hari tanpa pernah menebak
+passwordnya, jadi serangannya berubah dari menebak password menjadi menutup
+akses, dan itu berhasil tanpa dia perlu menebak apa pun.
+
+Empat hal yang tidak boleh dilepas:
+
+- **Ember akun dihitung dari email yang DIKIRIM, bukan dari akun yang
+  ditemukan.** Kalau ember hanya dibuat untuk email terdaftar, penebak bisa
+  membedakan email terdaftar dari yang tidak hanya dengan melihat mana yang
+  akhirnya terkunci — membocorkan persis hal yang pesan galatnya sembunyikan.
+- **Percobaan yang MEMICU kuncian dijawab 429, bukan 401.** Kalau tidak,
+  orangnya baru tahu dirinya terkunci pada percobaan berikutnya, dan sementara
+  itu menyangka passwordnya yang salah lalu mencoba terus.
+- **Password yang BENAR tetapi akunnya nonaktif tidak menaikkan hitungan.** Itu
+  bukan penebakan; menaikkannya akan mengunci akun yang sekadar dinonaktifkan.
+- **Ganti password ikut dibatasi.** Endpoint itu memeriksa password lama, jadi
+  tanpa pembatasan ia menjadi tempat menebak tanpa batas lewat perangkat yang
+  tertinggal terbuka — pintu belakang yang melewati seluruh pembatasan di form
+  masuk.
+
+**Gagal membaca tabel hitungan berarti melewatkan, bukan mengunci.** Ini satu-
+satunya tempat di lapisan akses yang sengaja gagal-membuka: gagal-menutup di
+sini berarti tabel yang bermasalah mengunci SELURUH pemakai termasuk Owner, dari
+sebab yang tidak ada hubungannya dengan penebakan password. Yang menahan saat
+itu terjadi adalah pembatasan bawaan Supabase Auth, yang tetap berjalan di
+sisinya sendiri.
+
+Owner memulihkan lewat panel **Kuncian Percobaan Masuk** di halaman Pengguna &
+Akses, atau `supabase/akses/pulihkan-akses.sql` bila yang terkunci justru Owner
+satu-satunya.
+
+### `trust proxy` menentukan siapa yang dibatasi
+
+`src/server.js` menyetel `trust proxy` sebanyak proxy yang benar-benar ada di
+depan aplikasi — Railway menaruh satu. Angka ini menentukan alamat mana yang
+dianggap alamat pemakai.
+
+`alamatIp()` memakai `req.ip` milik Express, **bukan nilai pertama dari
+X-Forwarded-For**. Header itu ditulis berurutan dan yang paling kiri berasal
+dari klien sendiri, jadi membacanya langsung berarti siapa pun bisa mengaku
+beralamat berbeda pada setiap permintaan — cukup mengganti satu header untuk
+mendapat jatah percobaan baru setiap kali.
+
+Terlalu besar berarti alamat karangan ikut dipercaya; terlalu kecil berarti
+seluruh pemakai tampak berasal dari alamat proxy yang sama, sehingga satu orang
+yang lupa password bisa mengunci semuanya. Bisa disetel lewat `PROXY_HOPS`.
+
 ### Penyembunyian di layar bukan pengamanan
 
 Menu Owner disembunyikan dan gerbang masuk menutupi layar, tetapi yang benar-

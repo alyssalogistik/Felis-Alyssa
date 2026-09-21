@@ -188,6 +188,26 @@ export function pasangKendaliPengguna() {
     }
   });
 
+  el('tabel-kunci')?.addEventListener('click', async (peristiwa) => {
+    const tombol = peristiwa.target.closest('[data-buka]');
+    if (!tombol) return;
+    const kotak = el('pesan-kunci');
+    try {
+      await ambil('/pengguna/buka-kunci', {
+        method: 'POST',
+        body: JSON.stringify({ kunci: tombol.dataset.buka }),
+      });
+      kotak.hidden = false;
+      kotak.className = 'pesan berhasil';
+      kotak.textContent = `Kuncian ${tombol.dataset.buka} dibuka.`;
+      await muatKunci();
+    } catch (error) {
+      kotak.hidden = false;
+      kotak.className = 'pesan gagal';
+      kotak.textContent = error.message;
+    }
+  });
+
   el('batal-pengguna')?.addEventListener('click', () => {
     const formulir = el('form-pengguna');
     formulir.reset();
@@ -197,6 +217,33 @@ export function pasangKendaliPengguna() {
     el('pengguna-password').required = true;
     pesan('');
   });
+}
+
+export async function muatKunci() {
+  const kotak = el('pesan-kunci');
+  if (kotak) kotak.hidden = true;
+  try {
+    const { data } = await ambil('/pengguna/kunci');
+    el('tabel-kunci').innerHTML = data.length > 0
+      ? `<table class="tabel">
+           <thead><tr><th>Kunci</th><th>Jenis</th><th>Sisa</th><th>Aksi</th></tr></thead>
+           <tbody>${data.map((k) => {
+             const sisa = Math.max(1, Math.ceil(
+               (new Date(k.terkunci_sampai) - new Date()) / 60000));
+             return `
+               <tr>
+                 <td>${aman(k.kunci)}</td>
+                 <td>${aman(k.jenis)}</td>
+                 <td>${sisa} menit</td>
+                 <td><button type="button" class="tombol-kecil"
+                       data-buka="${aman(k.kunci)}">Buka Kunci</button></td>
+               </tr>`;
+           }).join('')}</tbody>
+         </table>`
+      : kosong('Tidak ada yang sedang terkunci.');
+  } catch (error) {
+    el('tabel-kunci').innerHTML = kosong(error.message);
+  }
 }
 
 export async function muatJejak() {

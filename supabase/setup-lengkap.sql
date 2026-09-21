@@ -1422,6 +1422,39 @@ create trigger trg_sisakan_satu_owner
 --
 alter table profil_pengguna enable row level security;
 alter table jejak_aktivitas enable row level security;
+--
+--
+create table if not exists percobaan_masuk (
+  --
+  kunci           text primary key,
+  jenis           text not null check (jenis in ('AKUN', 'IP')),
+  gagal           int not null default 0,
+  pertama_gagal   timestamptz,
+  terakhir_gagal  timestamptz,
+  kunci_ke        int not null default 0,
+  terkunci_sampai timestamptz,
+  diubah_pada     timestamptz not null default now()
+);
+create index if not exists idx_percobaan_terkunci on percobaan_masuk (terkunci_sampai)
+  where terkunci_sampai is not null;
+create index if not exists idx_percobaan_waktu    on percobaan_masuk (diubah_pada);
+--
+drop function if exists bersihkan_percobaan_masuk();
+create function bersihkan_percobaan_masuk()
+returns integer
+language sql
+volatile
+set search_path = public
+as $fn$
+  with dibuang as (
+    delete from percobaan_masuk
+    where diubah_pada < now() - interval '24 hours'
+      and (terkunci_sampai is null or terkunci_sampai < now())
+    returning 1
+  )
+  select count(*)::int from dibuang
+$fn$;
+alter table percobaan_masuk enable row level security;
 
 -- Setelah skema berubah, PostgREST masih memakai peta lama sampai diberi
 -- tahu. Tanpa ini tabel baru tetap dilaporkan "not found in the schema
