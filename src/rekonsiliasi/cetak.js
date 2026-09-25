@@ -10,7 +10,7 @@
 import PDFDocument from 'pdfkit';
 import {
   A4, MARGIN, KOLOM, rupiah, tanggalPendek, keteranganFilter, susunHalaman,
-  totalkan, totalkanPerSumber, judulEntitas, judulEntitasPendek,
+  totalkan, totalkanPerSumber, judulEntitas, judulEntitasPendek, peringatanPending,
 } from './laporan.js';
 
 const FONT = 'Helvetica';
@@ -27,7 +27,7 @@ const GARIS_TIPIS = '#cccccc';
 
 const LEBAR_ISI = A4.lebar - MARGIN * 2;
 
-function kepalaDokumen(dok, kriteria, ringkasan, perSumber, dicetakPada) {
+function kepalaDokumen(dok, kriteria, ringkasan, perSumber, dicetakPada, pending = null) {
   let y = MARGIN;
 
   dok.font(FONT_TEBAL).fontSize(12).fillColor('#000000')
@@ -74,7 +74,23 @@ function kepalaDokumen(dok, kriteria, ringkasan, perSumber, dicetakPada) {
   const akhirKiri = gambarPasangan(kiri, MARGIN, 74);
   const akhirKanan = gambarPasangan(kanan, kolomKanan, 92);
 
-  return Math.max(akhirKiri, akhirKanan) + 6;
+  let bawah = Math.max(akhirKiri, akhirKanan) + 6;
+
+  // Uang keluar yang TIDAK ikut terhitung di laporan ini disebut di kop, bukan
+  // dibiarkan tak tertulis. Laporan yang tampak lengkap padahal ada transfer di
+  // luar hitungannya adalah cara paling mudah membuat orang membayar dua kali.
+  const peringatan = peringatanPending(pending);
+  if (peringatan) {
+    const tinggi = dok.font(FONT_TEBAL).fontSize(7.5)
+      .heightOfString(peringatan, { width: LEBAR_ISI - 12 });
+    dok.rect(MARGIN, bawah, LEBAR_ISI, tinggi + 10).fillColor('#fff4e0').fill();
+    dok.rect(MARGIN, bawah, 3, tinggi + 10).fillColor('#f5a524').fill();
+    dok.font(FONT_TEBAL).fontSize(7.5).fillColor('#7a4a00')
+      .text(peringatan, MARGIN + 9, bawah + 5, { width: LEBAR_ISI - 12 });
+    bawah += tinggi + 16;
+  }
+
+  return bawah;
 }
 
 function kepalaTabel(dok, y) {
@@ -155,7 +171,7 @@ function gambarBaris(dok, isi, y) {
  * @param {object} kriteria          Filter yang sedang aktif, untuk dicetak di kop.
  * @returns {Promise<Buffer>}
  */
-export function buatPdfLaporan(transaksi, kriteria = {}, sekarang = new Date()) {
+export function buatPdfLaporan(transaksi, kriteria = {}, sekarang = new Date(), pending = null) {
   const dok = new PDFDocument({ size: 'A4', layout: 'portrait', margin: MARGIN, autoFirstPage: false });
 
   // pdfkit mengukur teks memakai metrik font yang sedang dipasang, jadi ukuran
@@ -199,7 +215,7 @@ export function buatPdfLaporan(transaksi, kriteria = {}, sekarang = new Date()) 
     if (indeks > 0) dok.addPage();
 
     let y = indeks === 0
-      ? kepalaDokumen(dok, kriteria, ringkasan, perSumber, dicetakPada)
+      ? kepalaDokumen(dok, kriteria, ringkasan, perSumber, dicetakPada, pending)
       : MARGIN;
 
     y = kepalaTabel(dok, y);

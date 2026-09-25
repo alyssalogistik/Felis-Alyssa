@@ -78,3 +78,26 @@ export function tahunTersedia(transaksi) {
   }
   return [...tahun].sort((a, b) => b - a);
 }
+
+/**
+ * Apakah kriteria ini menyaring berdasarkan tanggal.
+ *
+ * Dipakai memutuskan apakah baris PEND perlu ditarik terpisah. Baris PEND
+ * tidak punya tanggal sama sekali, sehingga SETIAP penyaringan tanggal
+ * menyingkirkannya — `NULL >= '2026-09-15'` bukan benar dan bukan salah,
+ * jadi barisnya hilang tanpa satu pun galat.
+ *
+ * Diuji terhadap berkas sungguhan: satu cetakan Mutasi 17-24 September memuat
+ * 13 transaksi PEND senilai Rp 5.912.500 — termasuk transfer Rp 3.000.000 yang
+ * dicari pemakainya — dan tidak satu pun muncul saat disaring 15-24 September.
+ * Yang paling berbahaya: PEND adalah pergerakan PALING BARU di rekening, jadi
+ * yang hilang justru transfer yang paling sering ditanyakan "sudah dibayar
+ * belum", dan yang tampak belum dibayar akan dibayar untuk kedua kalinya.
+ */
+export function menyaringTanggal(kriteria = {}) {
+  return Boolean(
+    kriteria.dari || kriteria.sampai ||
+    kriteria.bulan !== null && kriteria.bulan !== undefined ||
+    kriteria.tahun !== null && kriteria.tahun !== undefined
+  );
+}

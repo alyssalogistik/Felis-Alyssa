@@ -318,6 +318,34 @@ baris — bahkan bisa jatuh di luar `BATAS_MUATAN` — sehingga auditor yang ber
 "supplier ini sudah saya transfer belum" melihat daftar yang tampak lengkap
 padahal transfer terbarunya tidak ikut termuat.
 
+**Pengurutan itu saja ternyata tidak cukup.** Baris PEND tidak punya tanggal,
+sehingga SETIAP penyaringan tanggal membuangnya: `NULL >= '2026-09-15'` bukan
+benar dan bukan salah, jadi barisnya tersingkir tanpa satu pun galat. Urutan
+paling atas tidak menolong kalau barisnya tidak pernah ikut terambil.
+
+Ini ditemukan dari pemakaian sungguhan: satu cetakan Mutasi 17–24 September
+memuat **13 transaksi PEND senilai Rp 5.912.500**, termasuk transfer
+Rp 3.000.000 yang sedang dicari pemiliknya, dan tidak satu pun muncul saat
+disaring 15–24 September. Layar melaporkan Rp 35.514.000 padahal yang benar
+Rp 38.516.500.
+
+Karena itu `/transaksi` dan `/cetak` menarik baris PEND **terpisah** lewat
+`pendingTersaring()`, dengan kriteria yang sama minus tanggalnya:
+
+- **Terpisah, bukan dengan melonggarkan filternya.** Mencampurnya membuat
+  laporan September ikut menjumlahkan transaksi yang belum berperiode —
+  kekeliruannya cuma berpindah tempat.
+- **Kosong ketika kriteria tidak menyaring tanggal**, karena di situ baris PEND
+  sudah ikut di daftar utama; menariknya lagi akan menampilkannya dua kali.
+  Penentunya `menyaringTanggal()` di `saringan.js`, murni dan teruji.
+- **Di layar**, blok peringatan di ATAS ringkasan, dengan subtotalnya sendiri.
+- **Di PDF**, satu baris peringatan di kop lewat `peringatanPending()` yang
+  menyebut jumlah dan nilainya. Laporan yang tampak lengkap padahal ada uang
+  keluar di luar hitungannya adalah cara paling mudah membuat orang membayar
+  dua kali.
+- **Nihil hasil bertanggal tetapi ada PEND tidak pernah disebut "tidak
+  ditemukan".** Itu justru keadaan paling berbahaya: uangnya baru saja keluar.
+
 Saat mutasi berikutnya membukukan transaksi itu, `src/rekonsiliasi/pending.js`
 mencocokkannya dan **tanggal baris yang sudah ada yang diisi** — bukan baris baru
 yang ditambahkan. Sidik jarinya lalu menjadi sama persis dengan transaksi baru
