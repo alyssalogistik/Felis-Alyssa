@@ -787,3 +787,12 @@ dialog .tombol-lembut, dialog .tombol { margin-top: 0; }
 .lencana.st-WAJAR                  { background: rgba(61,220,132,.12);  color: var(--hijau); }
 .lencana.st-PERLU_TINDAK_LANJUT    { background: rgba(169,112,255,.16); color: var(--ungu); }
 .lencana.st-TERKONFIRMASI_DUPLIKAT { background: rgba(255,92,92,.12);   color: var(--merah); }
+
+/* Panel transaksi yang uangnya sudah keluar tetapi belum dibukukan bank.
+   Diberi tepi tegas supaya tidak terbaca sebagai panel biasa: isinya uang
+   yang TIDAK ikut terhitung di total periode di bawahnya. */
+.panel-peringatan {
+  border-color: rgba(245,165,36,.45);
+  background: linear-gradient(0deg, rgba(245,165,36,.05), rgba(245,165,36,.05)), var(--kartu);
+}
+.panel-peringatan h3 { color: var(--aksen); }

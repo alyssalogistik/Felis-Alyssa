@@ -278,3 +278,28 @@ export function totalkanPerSumber(transaksi) {
     jumlah: transaksi.length,
   };
 }
+
+/**
+ * Baris peringatan untuk laporan cetak, bila ada transaksi yang belum
+ * dibukukan bank dan karena itu berada di luar penyaringan periode.
+ *
+ * Mengembalikan null bila tidak ada.
+ *
+ * Laporan ini dipakai memutuskan apakah seseorang sudah dibayar. Angka yang
+ * tampak lengkap padahal ada uang keluar di luar hitungannya adalah cara
+ * paling mudah membuat orang membayar dua kali — dan transaksi yang belum
+ * dibukukan justru pergerakan PALING BARU, yang paling sering ditanyakan.
+ * Diuji terhadap cetakan sungguhan: satu mutasi 17-24 September memuat 13
+ * transaksi seperti itu senilai Rp 5.912.500.
+ */
+export function peringatanPending(pending) {
+  const jumlah = pending?.jumlah ?? pending?.data?.length ?? 0;
+  if (!jumlah) return null;
+
+  const debit = Number(pending.debit ?? 0);
+  return (
+    `PERHATIAN: ${jumlah} transaksi belum dibukukan BCA (tanpa tanggal) senilai ` +
+    `${rupiah(debit)} TIDAK termasuk dalam laporan ini, karena tidak punya ` +
+    'tanggal sehingga berada di luar periode yang disaring.'
+  );
+}

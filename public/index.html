@@ -431,6 +431,11 @@
       </div>
     </form>
 
+    <!-- Transaksi PEND: uangnya sudah keluar tetapi BCA belum menetapkan
+         tanggal bukunya. Karena tak bertanggal, setiap filter periode
+         membuangnya - jadi ditampilkan terpisah di ATAS ringkasan, bukan
+         dicampur ke totalnya supaya angka periodenya tetap benar. -->
+    <div class="panel panel-peringatan" id="pending-bayaran" aria-live="polite" hidden></div>
     <div class="panel" id="ringkasan-bayaran" aria-live="polite"></div>
 
     <div class="panel aksi-cetak">

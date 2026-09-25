@@ -119,8 +119,68 @@ function baris(t) {
     </tr>`;
 }
 
-function tampilRingkasan(jumlah, ringkasan, adaKataKunci, hanyaDebit) {
+/**
+ * Blok transaksi PEND yang tersingkir oleh penyaringan tanggal.
+ *
+ * Baris PEND tidak punya tanggal, sehingga setiap filter periode membuangnya.
+ * Uangnya sudah keluar dari rekening; yang belum ada cuma tanggal bukunya dari
+ * BCA — dan karena PEND adalah pergerakan PALING BARU, yang hilang justru
+ * transfer yang paling sering ditanyakan "sudah dibayar belum".
+ *
+ * Ditampilkan TERPISAH dari total periode, bukan dicampur, supaya angka
+ * periodenya tetap benar untuk periode itu.
+ */
+function tampilPending(pending) {
+  const kotak = el('pending-bayaran');
+  if (!kotak) return;
+
+  const baris = pending?.data ?? [];
+  kotak.hidden = baris.length === 0;
+  if (baris.length === 0) { kotak.innerHTML = ''; return; }
+
+  const keluar = Number(pending.debit ?? 0);
+  const masuk = Number(pending.kredit ?? 0);
+
+  kotak.innerHTML = `
+    <h3>⚠ Belum dibukukan BCA &mdash; di luar filter tanggal</h3>
+    <p class="keterangan-panel">
+      ${baris.length} transaksi ini <b>uangnya sudah keluar</b>, tetapi BCA belum
+      menetapkan tanggal bukunya. Karena belum bertanggal, semuanya
+      <b>tidak ikut tersaring periode</b> dan tidak masuk total di bawah.
+      Biasanya ini pergerakan paling baru di rekening.
+    </p>
+    <div class="ringkas">
+      <div class="r-debit"><b>${aman(rupiah.format(keluar))}</b><small>Uang keluar belum dibukukan</small></div>
+      ${masuk > 0 ? `<div class="r-kredit"><b>${aman(rupiah.format(masuk))}</b><small>Uang masuk belum dibukukan</small></div>` : ''}
+    </div>
+    <table class="tabel">
+      <thead><tr><th>Keterangan</th><th class="angka-kolom">Keluar</th><th class="angka-kolom">Masuk</th></tr></thead>
+      <tbody>${baris.map((t) => `
+        <tr>
+          <td class="keterangan-sel">${aman(t.keterangan ?? '')}</td>
+          <td class="angka-kolom keluar">${formatNominal(t.debit)}</td>
+          <td class="angka-kolom">${formatNominal(t.kredit)}</td>
+        </tr>`).join('')}
+      </tbody>
+    </table>`;
+}
+
+function tampilRingkasan(jumlah, ringkasan, adaKataKunci, hanyaDebit, pending = null) {
   const kotak = el('ringkasan-bayaran');
+  const adaPending = (pending?.data?.length ?? 0) > 0;
+
+  if (jumlah === 0 && adaPending) {
+    // Nol baris bertanggal TAPI ada PEND. Menyebut "tidak ditemukan" di sini
+    // akan membuat orang menyimpulkan belum dibayar padahal uangnya justru
+    // baru saja keluar — persis jalan menuju bayar dua kali.
+    kotak.innerHTML = `
+      <p class="keterangan-panel">
+        Tidak ada transaksi <b>bertanggal</b> yang cocok pada periode ini, tetapi
+        ada ${pending.data.length} transaksi yang <b>uangnya sudah keluar</b> dan
+        belum dibukukan BCA &mdash; lihat kotak di atas.
+      </p>`;
+    return;
+  }
 
   if (jumlah === 0) {
     // Tidak ketemu bukan berarti belum dibayar. Nama di rekening koran sering
@@ -131,7 +191,9 @@ function tampilRingkasan(jumlah, ringkasan, adaKataKunci, hanyaDebit) {
       <p class="keterangan-panel">
         Ini belum tentu berarti supplier belum dibayar. Nama di keterangan bank
         sering berbeda dari nama resmi supplier &mdash; coba sebagian namanya saja,
-        nama pemilik rekening, atau longgarkan filter tanggalnya.
+        nama pemilik rekening, atau longgarkan filter tanggalnya. Transfer yang
+        baru dikirim juga bisa belum dibukukan BCA, dan yang seperti itu tidak
+        punya tanggal sama sekali.
       </p>`;
     return;
   }
@@ -173,6 +235,7 @@ export async function cariBayaran(lanjut = false) {
   const berhenti = mulai + BATAS_MUATAN;
   let pertama = !lanjut;
   let ringkasan = null;
+  let pending = null;
 
   try {
     // Ditarik berulang sampai seluruh hasil yang cocok masuk ke tabel. Jumlah
@@ -186,6 +249,7 @@ export async function cariBayaran(lanjut = false) {
       const hasil = await ambil(`/rekonsiliasi/transaksi?${parameter}`);
       total = hasil.total ?? 0;
       ringkasan = hasil.ringkasan;
+      pending = hasil.pending ?? pending;
 
       const isi = hasil.data.map(baris).join('');
       if (pertama) {
@@ -203,12 +267,14 @@ export async function cariBayaran(lanjut = false) {
       if (hasil.data.length === 0 || mulai >= total || mulai >= berhenti) break;
     }
 
-    tampilRingkasan(total, ringkasan, adaKataKunci, hanyaDebit);
+    tampilPending(pending);
+    tampilRingkasan(total, ringkasan, adaKataKunci, hanyaDebit, pending);
     gambarKopCetak(total, ringkasan);
     el('muat-bayaran').hidden = mulai >= total;
   } catch (error) {
     kotak.innerHTML = `<tr><td colspan="7">${kosong(error.message)}</td></tr>`;
     el('ringkasan-bayaran').innerHTML = '';
+    if (el('pending-bayaran')) el('pending-bayaran').hidden = true;
     el('muat-bayaran').hidden = true;
   }
 }
