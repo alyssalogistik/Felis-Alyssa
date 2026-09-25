@@ -10,6 +10,52 @@
 </head>
 <body>
 
+<!-- Gerbang masuk. Menutupi seluruh layar sampai sesinya sah.
+     Ini kenyamanan, bukan pengamanan: yang benar-benar menahan adalah server,
+     yang menolak setiap endpoint tanpa sesi. -->
+<div id="gerbang" class="gerbang" hidden>
+  <div class="gerbang-kotak">
+    <div class="lambang">AL</div>
+    <h1>Alyssa Auto Logistik</h1>
+    <p class="gerbang-sub">Dashboard Rekonsiliasi &amp; Audit &mdash; khusus internal</p>
+    <form id="form-masuk" class="formulir">
+      <label>Email
+        <input id="masuk-email" type="email" autocomplete="username" required>
+      </label>
+      <label>Password
+        <input id="masuk-password" type="password" autocomplete="current-password" required>
+      </label>
+      <button type="submit" class="tombol tombol-blok">Masuk</button>
+    </form>
+    <p id="pesan-masuk" class="pesan" hidden></p>
+    <p class="gerbang-kaki">Akun dibuat oleh Owner. Tidak ada pendaftaran mandiri.</p>
+  </div>
+</div>
+
+<!-- Wajib ganti password: password awal ditetapkan Owner, jadi Owner sempat
+     mengetahuinya. Sampai diganti, tidak ada halaman lain yang bisa dipakai. -->
+<div id="wajib-ganti" class="gerbang" hidden>
+  <div class="gerbang-kotak">
+    <h1>Ganti Password Dulu</h1>
+    <p class="gerbang-sub">
+      Password awal Anda diberikan Owner. Ganti sekarang supaya hanya Anda yang tahu.
+    </p>
+    <form id="form-ganti-password" class="formulir">
+      <label>Password lama
+        <input id="ganti-lama" type="password" autocomplete="current-password" required>
+      </label>
+      <label>Password baru <small>minimal 10 karakter</small>
+        <input id="ganti-baru" type="password" autocomplete="new-password" minlength="10" required>
+      </label>
+      <label>Ulangi password baru
+        <input id="ganti-ulang" type="password" autocomplete="new-password" minlength="10" required>
+      </label>
+      <button type="submit" class="tombol tombol-blok">Simpan Password Baru</button>
+    </form>
+    <p id="pesan-ganti" class="pesan" hidden></p>
+  </div>
+</div>
+
 <header class="puncak">
   <div class="puncak-baris">
     <div class="lambang">AL</div>
@@ -17,6 +63,7 @@
       <h1>ALYSSA AUTO LOGISTIK</h1>
       <p id="salam">Selamat datang, Admin</p>
     </div>
+    <div id="sesi-pengguna" class="sesi-pengguna" hidden></div>
   </div>
   <p class="slogan">Kelola pengiriman kendaraan dengan lebih mudah</p>
   <form class="cari" id="form-cari" role="search">
@@ -39,6 +86,7 @@
       <a href="#/buat" class="pintas"><span>➕</span>Buat</a>
       <a href="#/rekonsiliasi" class="pintas"><span>🏦</span>Rekon Bank</a>
       <a href="#/mekari" class="pintas"><span>🧾</span>Audit Mekari</a>
+      <a href="#/pengguna" class="pintas" data-owner hidden><span>👥</span>Pengguna</a>
     </nav>
 
     <h2 class="judul">Ringkasan Pengiriman</h2>
@@ -700,6 +748,85 @@
       <button id="muat-temuan-mekari" class="tombol-lembut" type="button" hidden>
         Muat lebih banyak
       </button>
+    </div>
+  </section>
+
+
+  <!-- Pengguna & Akses (Owner) -->
+  <section id="tampilan-pengguna" class="tampilan" hidden>
+    <h2 class="judul">👥 Pengguna &amp; Akses</h2>
+
+    <form class="panel" id="form-pengguna">
+      <h3 id="judul-form-pengguna">Tambah Pengguna</h3>
+      <p class="keterangan-panel">
+        Tidak ada pendaftaran mandiri. Owner menetapkan password awal, lalu
+        memberikannya langsung ke auditor &mdash; dan auditor wajib menggantinya
+        saat login pertama, sehingga sesudah itu Owner tidak lagi mengetahuinya.
+      </p>
+
+      <label>Nama <input name="nama" required autocomplete="off"></label>
+      <label>Email <input id="pengguna-email" name="email" type="email" required autocomplete="off"></label>
+      <label>Password awal <small>minimal 10 karakter</small>
+        <input id="pengguna-password" name="password" type="password" minlength="10" required
+               autocomplete="new-password">
+      </label>
+
+      <label>Role
+        <select name="peran" required>
+          <option value="AUDITOR">Auditor</option>
+          <option value="OWNER">Owner</option>
+        </select>
+      </label>
+
+      <fieldset>
+        <legend>Boleh mengakses perusahaan</legend>
+        <label class="pilihan">
+          <input type="checkbox" name="entitas_akses" value="PT_ALYSSA_AUTO_LOGISTIK">
+          PT Alyssa Auto Logistik
+        </label>
+        <label class="pilihan">
+          <input type="checkbox" name="entitas_akses" value="CV_ALYSSA_TRANS_UTAMA">
+          CV Alyssa Trans Utama
+        </label>
+        <p class="keterangan-panel">Owner selalu mendapat keduanya.</p>
+      </fieldset>
+
+      <label class="pilihan">
+        <input type="checkbox" name="boleh_periksa">
+        Boleh mengubah status &amp; catatan audit
+      </label>
+
+      <div class="sejajar rapat">
+        <button type="submit" class="tombol">Simpan</button>
+        <button type="button" class="tombol-lembut" id="batal-pengguna">Batal</button>
+      </div>
+      <p id="pesan-pengguna" class="pesan" hidden></p>
+    </form>
+
+    <div class="panel">
+      <h3>Daftar Pengguna</h3>
+      <div id="tabel-pengguna" class="gulir-x"></div>
+    </div>
+
+    <div class="panel">
+      <h3>Kuncian Percobaan Masuk</h3>
+      <p class="keterangan-panel">
+        Akun atau alamat IP yang sedang ditahan karena terlalu banyak percobaan
+        masuk yang gagal. Setiap kuncian berakhir sendiri &mdash; paling lama 30
+        menit. Tombol di bawah hanya mempercepatnya.
+      </p>
+      <div id="tabel-kunci" class="gulir-x"></div>
+      <p id="pesan-kunci" class="pesan" hidden></p>
+    </div>
+
+    <div class="panel">
+      <h3>Jejak Aktivitas</h3>
+      <p class="keterangan-panel">
+        Catatan ini hanya bisa ditambah. Database menolak setiap perubahan dan
+        penghapusan, termasuk dari Owner. Akun yang dihapus tetap terbaca di sini
+        karena nama dan emailnya disalin saat aksinya terjadi.
+      </p>
+      <div id="tabel-jejak" class="gulir-x"></div>
     </div>
   </section>
 
