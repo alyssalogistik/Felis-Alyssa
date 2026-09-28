@@ -11,6 +11,10 @@ import { pasangKendaliSupplier, muatSupplier } from './supplier.js';
 import { pasangKendaliImpor } from './impor.js';
 import { pasangKendaliPembayaran, muatPembayaranManual } from './pembayaran.js';
 import { pasangKendaliMekari, muatMekari } from './mekari.js';
+import {
+  periksaSesi, terapkanGerbang, pasangKendaliMasuk, jalurPublik, adalahOwner,
+} from './masuk.js';
+import { pasangKendaliPengguna, muatPengguna, muatJejak, muatKunci } from './pengguna.js';
 
 const STATUS = {
   baru:       'Baru',
@@ -223,7 +227,7 @@ async function muatTrip() {
 
 // --- Router -----------------------------------------------------------------
 
-const TAMPILAN = ['beranda', 'pesanan', 'detail', 'buat', 'lacak', 'trip', 'rekonsiliasi', 'audit', 'mekari'];
+const TAMPILAN = ['beranda', 'pesanan', 'detail', 'buat', 'lacak', 'trip', 'rekonsiliasi', 'audit', 'mekari', 'pengguna'];
 
 function arahkan() {
   const [jalur, kueri] = (location.hash.slice(2) || 'beranda').split('?');
@@ -237,6 +241,15 @@ function arahkan() {
     else tautan.removeAttribute('aria-current');
   }
   window.scrollTo(0, 0);
+
+  // Gerbang diperiksa ulang tiap pindah halaman: #/lacak tetap boleh dibuka
+  // tanpa masuk, sedangkan halaman internal tidak.
+  if (!terapkanGerbang()) return;
+
+  // Halaman ini hanya berguna untuk Owner. Auditor yang mengetik alamatnya
+  // langsung tetap sampai ke sini, dan melihat halaman kosong karena setiap
+  // endpoint di baliknya menjawab 403.
+  if (nama === 'pengguna') { if (adalahOwner()) { muatPengguna(); muatKunci(); muatJejak(); } return; }
 
   if (nama === 'beranda') muatBeranda();
   else if (nama === 'rekonsiliasi') muatRekonsiliasi();
@@ -359,5 +372,14 @@ pasangKendaliPembayaran(async () => {
   await Promise.all([muatSupplier(), cariBayaran()]);
 });
 
+pasangKendaliMasuk(arahkan);
+pasangKendaliPengguna();
+
 window.addEventListener('hashchange', arahkan);
-arahkan();
+
+// Sesi diperiksa SEBELUM halaman pertama digambar. Tanpa ini, layar sempat
+// memuat data internal selama sepersekian detik sebelum gerbangnya turun —
+// dan yang sempat tergambar itu bisa terbaca, bahkan terfoto.
+periksaSesi()
+  .catch(() => {})
+  .finally(() => { terapkanGerbang(); arahkan(); });

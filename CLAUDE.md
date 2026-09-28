@@ -64,6 +64,7 @@ Tanpa framework dan tanpa build step — disengaja, jangan ditambahkan tanpa ala
 | `src/api.js` | Router. Semua akses database lewat sini |
 | `src/supabase.js` | Client publik (anon) dan admin (service_role), dipisah |
 | `public/` | SPA vanilla JS, hash router |
+| `src/akses/` | Sesi, peran, pembatasan PT/CV, jejak aktivitas |
 | `src/mekari/` | Audit Data Mekari. Terpisah penuh dari rekonsiliasi |
 | `supabase/migrations/` | Skema, dijalankan berurutan lewat SQL Editor |
 
@@ -76,13 +77,187 @@ memegang `service_role`. Kunci admin tidak pernah dikirim ke browser.
 Kalau nanti frontend perlu akses langsung ke Supabase, tambahkan policy secara
 eksplisit per tabel — jangan mematikan RLS.
 
-## Catatan terbuka
+## Authentication dan hak akses
 
-**Belum ada authentication.** Keputusan pemilik project: lanjutkan tanpa membuat
-sistem login dulu. Konsekuensinya, siapa pun yang tahu URL-nya bisa mengakses
-seluruh data lewat `/api`, termasuk data Rekonsiliasi Bank nanti. Ini disadari
-dan diterima, bukan kelalaian. Tinjau ulang sebelum aplikasi dipakai lebih luas
-dari lingkaran internal.
+Identitas dan password dipegang **Supabase Auth**. Tabel aplikasi tidak pernah
+menyimpan password dalam bentuk apa pun; `profil_pengguna` hanya memegang peran,
+akses entitas, dan status.
+
+**Sesinya dipegang server, bukan peramban.** Login menembak `/api/auth/masuk`,
+server yang memanggil Supabase Auth, lalu tokennya ditaruh di cookie
+`HttpOnly; Secure; SameSite=Lax`. supabase-js tidak pernah ikut ke peramban —
+project ini tanpa build step, dan supabase-js menyimpan token di
+`localStorage` yang bisa dibaca JavaScript.
+
+Dua peran: **OWNER** (penuh, selalu melihat PT dan CV) dan **AUDITOR** (dibuat
+Owner, akses entitas ditentukan, hanya boleh menulis hasil pemeriksaan bila
+diberi `boleh_periksa`).
+
+### Peran dibaca dari database di setiap permintaan
+
+Tidak pernah dari isi token, dan tidak pernah dari apa pun yang dikirim
+peramban. Inilah yang membuat penonaktifan berlaku **seketika**: kalau perannya
+dibaca dari token, auditor yang baru dinonaktifkan masih bisa bekerja sampai
+tokennya kedaluwarsa — bisa satu jam penuh. Harganya satu kueri kecil per
+permintaan.
+
+### Bawaan kebijakan menutup, bukan membuka
+
+`src/akses/kebijakan.js` memetakan metode + jalur ke kelas izin. Yang **tidak
+disebut** di sana tidak menjadi bebas: GET jatuh ke BACA, dan yang bukan GET
+jatuh ke OWNER. Jadi endpoint baru yang penulisnya lupa pikirkan izinnya
+menjadi terlalu ketat dan langsung ketahuan saat dicoba — bukan diam-diam bisa
+dipakai auditor untuk menghapus data.
+
+Hanya dua jalur yang terbuka tanpa login, dan keduanya disebut satu per satu:
+`POST /auth/masuk` dan `GET /lacak/:no_resi`. Pelacakan resi dipakai customer;
+endpoint-nya hanya mengembalikan kolom pengiriman dan menuntut nomor resi yang
+persis, sehingga tidak bisa dipakai menyusuri rekonsiliasi, rekening koran,
+supplier, pembayaran, maupun audit.
+
+### Pembatasan PT/CV ditulis ulang di depan, bukan di dua belas tempat
+
+Middleware menulis ulang `req.query.entitas` sebelum handler berjalan, sehingga
+pembatasan berlaku untuk seluruh titik saring sekaligus **tanpa satu baris pun
+logika rekon berubah**.
+
+Yang paling penting: **filter KOSONG milik auditor PT diubah menjadi PT.**
+Sebelum lapisan ini ada, kosong berarti `null` yang berarti kueri tanpa filter —
+dan tanpa filter berarti CV ikut muncul, tanpa satu pun galat. Aturannya ada di
+`src/akses/entitas-akses.js`, murni dan teruji.
+
+`test/akses-entitas.test.js` memuat penjaga yang gagal bila `KODE_ENTITAS`
+bertambah: dengan tiga entitas ada keadaan "boleh dua dari tiga" yang tidak bisa
+dinyatakan sebagai satu nilai query, dan menjawabnya "tanpa filter" akan
+membocorkan perusahaan yang bukan haknya.
+
+### Penjaga yang dijalankan database
+
+Tiga trigger di `0011`, sengaja di database dan bukan hanya di aplikasi —
+aturan yang hanya hidup di kode akan hilang begitu ada satu jalur baru yang lupa
+memanggilnya:
+
+- `jejak_aktivitas` **hanya bisa ditambah.** Setiap UPDATE dan DELETE ditolak,
+  termasuk dari service_role.
+- **Owner utama** tidak bisa dihapus, dinonaktifkan, diturunkan perannya, atau
+  dilepas penandanya.
+- **Owner aktif terakhir** tidak boleh hilang.
+
+Satu hal yang TIDAK bisa dijaga database: mencegah auditor menaikkan perannya
+sendiri lewat SQL langsung. Seluruh akses memakai service_role, jadi database
+tidak tahu siapa yang sedang bertindak. Penjaganya di aplikasi — auditor tidak
+punya satu pun endpoint yang menyentuh `profil_pengguna`, dan perannya selalu
+dibaca dari database.
+
+### Jejak aktivitas
+
+Identitas pelakunya **disalin** ke dalam barisnya, tanpa kunci asing ke
+`profil_pengguna`. Akun auditor memang dimaksudkan untuk dihapus setelah
+pekerjaannya selesai; kalau jejaknya bergantung pada baris profil, menghapus
+akunnya akan ikut menghapus catatan pekerjaannya — persis yang tidak boleh
+terjadi pada alat audit.
+
+Pencatatan perubahan dilakukan **terpusat di middleware**, bukan dengan
+menyisipkan `catat()` ke setiap endpoint. Cara yang menyisipkan menuntut setiap
+endpoint baru ingat mencatat dirinya, dan yang lupa tidak menimbulkan galat apa
+pun — aktivitasnya cuma tidak pernah muncul di jejak, dan itu baru ketahuan saat
+jejaknya dibutuhkan.
+
+Yang belum tercatat: **nilai sebelum perubahan.** Yang tersimpan adalah nilai
+baru beserta pelakunya; nilai lamanya bisa dibaca dari entri sebelumnya untuk
+objek yang sama.
+
+### Proteksi menyala sendiri setelah ada Owner
+
+`proteksiAktif()` menyala begitu ada satu OWNER aktif di database. Ini yang
+membuat urutan pemasangan aman: skema dipasang lebih dulu dan aplikasi tetap
+terbuka seperti sebelumnya, Owner dibuat, dan sejak saat itu seluruh halaman
+internal langsung terkunci — tanpa env var yang bisa lupa diisi, dan tanpa
+jendela waktu di mana Owner sendiri terkunci di luar.
+
+**Gagal membaca berarti menyala, bukan terbuka.** `WAJIB_LOGIN=1` memaksanya
+menyala apa pun isi tabelnya.
+
+### Pembatasan percobaan masuk
+
+Dua ember dihitung terpisah, dan cukup salah satu penuh untuk menolak:
+
+| Ember | Batas | Jendela | Kuncian | Naik? |
+|---|---|---|---|---|
+| Per akun | 5 gagal | 15 menit | 15 menit | ya, maksimum 30 menit |
+| Per alamat IP | 20 gagal | 15 menit | 15 menit | tidak |
+
+**Per akun** menahan penebak yang membidik satu email dari banyak tempat; **per
+IP** menahan yang dari satu tempat mencoba banyak email. Yang satu saja selalu
+meninggalkan jalan bagi yang lain. Batas IP jauh lebih longgar karena satu
+kantor keluar lewat satu alamat: batas ketat di sana membuat satu orang yang
+lupa password mengunci seluruh rekannya.
+
+Aturannya di `src/akses/batas-masuk.js` — murni, tanpa I/O, sehingga lama
+kuncian bisa diuji tanpa menunggu waktu sungguhan berlalu.
+
+**Tidak ada kuncian permanen, dan itu wajib.** Pemilik project ini satu orang;
+akun yang terkunci selamanya karena salah ketik jauh lebih buruk daripada risiko
+yang dicegahnya. Lama kuncian berhenti naik di 30 menit — tanpa batas atas,
+penebak yang gigih bisa mengunci akun Owner berhari-hari tanpa pernah menebak
+passwordnya, jadi serangannya berubah dari menebak password menjadi menutup
+akses, dan itu berhasil tanpa dia perlu menebak apa pun.
+
+Empat hal yang tidak boleh dilepas:
+
+- **Ember akun dihitung dari email yang DIKIRIM, bukan dari akun yang
+  ditemukan.** Kalau ember hanya dibuat untuk email terdaftar, penebak bisa
+  membedakan email terdaftar dari yang tidak hanya dengan melihat mana yang
+  akhirnya terkunci — membocorkan persis hal yang pesan galatnya sembunyikan.
+- **Percobaan yang MEMICU kuncian dijawab 429, bukan 401.** Kalau tidak,
+  orangnya baru tahu dirinya terkunci pada percobaan berikutnya, dan sementara
+  itu menyangka passwordnya yang salah lalu mencoba terus.
+- **Password yang BENAR tetapi akunnya nonaktif tidak menaikkan hitungan.** Itu
+  bukan penebakan; menaikkannya akan mengunci akun yang sekadar dinonaktifkan.
+- **Ganti password ikut dibatasi.** Endpoint itu memeriksa password lama, jadi
+  tanpa pembatasan ia menjadi tempat menebak tanpa batas lewat perangkat yang
+  tertinggal terbuka — pintu belakang yang melewati seluruh pembatasan di form
+  masuk.
+
+**Gagal membaca tabel hitungan berarti melewatkan, bukan mengunci.** Ini satu-
+satunya tempat di lapisan akses yang sengaja gagal-membuka: gagal-menutup di
+sini berarti tabel yang bermasalah mengunci SELURUH pemakai termasuk Owner, dari
+sebab yang tidak ada hubungannya dengan penebakan password. Yang menahan saat
+itu terjadi adalah pembatasan bawaan Supabase Auth, yang tetap berjalan di
+sisinya sendiri.
+
+Owner memulihkan lewat panel **Kuncian Percobaan Masuk** di halaman Pengguna &
+Akses, atau `supabase/akses/pulihkan-akses.sql` bila yang terkunci justru Owner
+satu-satunya.
+
+### `trust proxy` menentukan siapa yang dibatasi
+
+`src/server.js` menyetel `trust proxy` sebanyak proxy yang benar-benar ada di
+depan aplikasi — Railway menaruh satu. Angka ini menentukan alamat mana yang
+dianggap alamat pemakai.
+
+`alamatIp()` memakai `req.ip` milik Express, **bukan nilai pertama dari
+X-Forwarded-For**. Header itu ditulis berurutan dan yang paling kiri berasal
+dari klien sendiri, jadi membacanya langsung berarti siapa pun bisa mengaku
+beralamat berbeda pada setiap permintaan — cukup mengganti satu header untuk
+mendapat jatah percobaan baru setiap kali.
+
+Terlalu besar berarti alamat karangan ikut dipercaya; terlalu kecil berarti
+seluruh pemakai tampak berasal dari alamat proxy yang sama, sehingga satu orang
+yang lupa password bisa mengunci semuanya. Bisa disetel lewat `PROXY_HOPS`.
+
+### Penyembunyian di layar bukan pengamanan
+
+Menu Owner disembunyikan dan gerbang masuk menutupi layar, tetapi yang benar-
+benar menahan adalah server. Auditor yang mengetik `#/pengguna` langsung tetap
+sampai ke halamannya, dan melihatnya kosong karena setiap endpoint di baliknya
+menjawab 403. Kalau seluruh `public/masuk.js` dihapus, data tetap tidak bocor.
+
+Satu jebakan CSS yang sudah memakan korban di sini: **`[hidden]` kalah dari
+kelas apa pun yang menyetel `display`.** Peramban menerapkannya lewat stylesheet
+user-agent, yang kalah spesifisitasnya. Akibatnya gerbang masuk dan menu khusus
+Owner sempat tergambar terus walaupun atributnya sudah benar. `style.css`
+menutupnya dengan satu aturan global `[hidden] { display: none !important; }`.
 
 ## Konvensi
 

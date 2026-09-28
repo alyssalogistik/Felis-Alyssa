@@ -2,6 +2,9 @@ import { Router } from 'express';
 import { createAdminClient } from './supabase.js';
 import rekonsiliasi from './rekonsiliasi/api.js';
 import mekari from './mekari/api.js';
+import akses from './akses/api.js';
+import { middlewareAkses } from './akses/sesi.js';
+import { buatPencatat } from './akses/jejak.js';
 
 const db = createAdminClient();
 
@@ -29,6 +32,16 @@ function jalur(handler) {
 }
 
 const api = Router();
+
+// Lapisan akses, dipasang SEBELUM satu pun rute di bawahnya.
+//
+// Ditaruh di sini, bukan di tiap router, supaya tidak ada jalur yang bisa
+// terlewat: apa pun yang dipasang di bawah baris ini otomatis tunduk pada
+// kebijakan izin, dan yang bukan GET jatuh ke OWNER kalau tidak disebut
+// sebaliknya. Dua jalur yang tetap terbuka — pelacakan resi dan form masuk —
+// disebut satu per satu di kebijakan.js.
+api.use(middlewareAkses(db, buatPencatat(db)));
+api.use(akses);
 
 // --- Ringkasan untuk dashboard ---------------------------------------------
 
