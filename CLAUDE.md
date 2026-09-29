@@ -898,6 +898,30 @@ Pengosongan itu tampilan belaka — tidak satu baris pun dihapus dari
 dengan mencari ulang; tanpa itu, layar yang tiba-tiba kosong terbaca seperti
 datanya ikut terhapus.
 
+### Pemuatan yang sedang berjalan harus dibatalkan, bukan dibiarkan
+
+Pemuatan seluruh hasil berjalan sebagai beberapa permintaan berurutan, jadi di
+antaranya pemakai sempat menekan tombol lain. Permintaan yang telanjur berangkat
+tetap kembali dan tetap menempelkan barisnya — ke tabel yang sudah tidak
+mengharapkannya lagi. Penjaganya `giliranAktif` di `public/bayaran.js`: setiap
+pencarian dan setiap pengosongan menaikkannya, dan putaran yang nomornya sudah
+tidak berlaku berhenti diam tanpa menyentuh layar.
+
+Dua kekeliruan yang ditimbulkannya, keduanya pernah terjadi di pemakaian
+sungguhan:
+
+- **Menyimpan PDF di tengah pemuatan.** Layar menuliskan "hasil dikosongkan",
+  lalu halaman berikutnya menempel di bawah pesan itu — 200 baris berbaris di
+  bawah kalimat yang mengatakan tidak ada apa-apa.
+- **Menekan "Cari / Terapkan Filter" dua kali.** Halaman milik pencarian pertama
+  menempel di atas hasil pencarian kedua: tabel memuat 650 baris untuk 450
+  transaksi. Di halaman ini itu berbahaya ke arah sebaliknya dari biasanya —
+  transfer tampak lebih banyak daripada yang sungguh ada.
+
+Blok PEND ikut diturunkan saat pengosongan. Ia bagian dari hasil yang sama, dan
+yang tertinggal sendirian di layar kosong terbaca seolah itulah seluruh
+transaksi yang cocok — padahal justru yang belum berperiode.
+
 Dua hal yang mudah salah:
 
 - **Lebar kolom diukur, bukan dikira-kira.** Kolom yang lebih sempit dari

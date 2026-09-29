@@ -35,6 +35,19 @@ const BATAS_MUATAN = 2000;
 let mulai = 0;
 let total = 0;
 
+/**
+ * Nomor urut pencarian yang sedang berlaku.
+ *
+ * Pemuatan seluruh hasil berjalan sebagai beberapa permintaan berurutan, jadi
+ * di antaranya pemakai sempat menekan tombol lain. Tanpa penanda ini,
+ * permintaan yang sudah telanjur berangkat tetap menempelkan barisnya ke tabel
+ * yang baru saja dikosongkan — layar mengatakan "hasil dikosongkan" sementara
+ * barisnya berbaris di bawahnya. Setiap pencarian dan setiap pengosongan
+ * menaikkan nomor ini; putaran yang nomornya sudah tidak berlaku berhenti diam
+ * tanpa menyentuh layar sama sekali.
+ */
+let giliranAktif = 0;
+
 /** Isian formulir apa adanya — belum tentu sudah diterapkan. */
 function kriteriaFormulir() {
   const parameter = new URLSearchParams();
@@ -217,6 +230,8 @@ export async function cariBayaran(lanjut = false) {
   const kotak = el('isi-tabel-bayaran');
   if (!kotak) return;
 
+  const giliran = ++giliranAktif;
+
   if (!lanjut) {
     mulai = 0;
     // Potret diambil sekali di sini. Halaman berikutnya memakai potret yang
@@ -247,6 +262,10 @@ export async function cariBayaran(lanjut = false) {
       parameter.set('mulai', String(mulai));
 
       const hasil = await ambil(`/rekonsiliasi/transaksi?${parameter}`);
+
+      // Layar sudah berpindah ke keadaan lain selama permintaan ini berjalan.
+      if (giliran !== giliranAktif) return;
+
       total = hasil.total ?? 0;
       ringkasan = hasil.ringkasan;
       pending = hasil.pending ?? pending;
@@ -272,6 +291,8 @@ export async function cariBayaran(lanjut = false) {
     gambarKopCetak(total, ringkasan);
     el('muat-bayaran').hidden = mulai >= total;
   } catch (error) {
+    if (giliran !== giliranAktif) return;
+
     kotak.innerHTML = `<tr><td colspan="7">${kosong(error.message)}</td></tr>`;
     el('ringkasan-bayaran').innerHTML = '';
     if (el('pending-bayaran')) el('pending-bayaran').hidden = true;
@@ -410,10 +431,20 @@ function kosongkanHasil() {
   mulai = 0;
   total = 0;
 
+  // Membatalkan pemuatan yang mungkin masih berjalan. Kalau tidak, halaman
+  // berikutnya yang sudah telanjur diminta akan menempel di bawah pesan kosong.
+  giliranAktif += 1;
+
   el('isi-tabel-bayaran').innerHTML =
     `<tr><td colspan="7">${kosong('Hasil dikosongkan setelah PDF disimpan. Tekan Cari / Terapkan Filter untuk menampilkannya lagi.')}</td></tr>`;
   el('ringkasan-bayaran').innerHTML = '';
   el('muat-bayaran').hidden = true;
+
+  // Blok PEND ikut diturunkan. Ia bagian dari hasil yang sama, dan yang
+  // tertinggal sendirian di layar kosong terbaca seolah itulah seluruh
+  // transaksi yang cocok.
+  const pend = el('pending-bayaran');
+  if (pend) { pend.hidden = true; pend.innerHTML = ''; }
 
   const kop = el('kop-cetak');
   if (kop) kop.innerHTML = '';
@@ -432,6 +463,12 @@ async function simpanPdf() {
   tombol.disabled = true;
   pesanCetak('', 'Menyiapkan PDF…');
 
+  // Laporannya dibuat di server dan bisa memakan waktu. Kalau selama itu
+  // pemakai menjalankan pencarian baru, yang tampak di layar bukan lagi hasil
+  // yang barusan disimpan — dan mengosongkannya berarti membuang hasil yang
+  // tidak ada hubungannya dengan berkas tadi.
+  const giliran = giliranAktif;
+
   let alamatObjek = null;
   try {
     const respons = await fetch(alamatLaporan());
@@ -447,8 +484,12 @@ async function simpanPdf() {
     tautan.click();
     tautan.remove();
 
-    kosongkanHasil();
-    pesanCetak('berhasil', 'PDF berhasil disimpan. Hasil transaksi telah dikosongkan.');
+    if (giliran === giliranAktif) {
+      kosongkanHasil();
+      pesanCetak('berhasil', 'PDF berhasil disimpan. Hasil transaksi telah dikosongkan.');
+    } else {
+      pesanCetak('berhasil', 'PDF berhasil disimpan. Hasil di layar dibiarkan karena sudah berganti pencarian.');
+    }
   } catch (error) {
     // Gagal menyimpan berarti hasil di layar dibiarkan apa adanya.
     pesanCetak('gagal', error.message);
