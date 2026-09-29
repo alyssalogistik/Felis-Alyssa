@@ -843,3 +843,12 @@ body.terkunci { overflow: hidden; }
 .tombol-kecil.bahaya { color: var(--merah); border-color: rgba(255,92,92,.35); }
 .tombol-kecil.bahaya:hover, .tombol-kecil.bahaya:focus-visible { border-color: var(--merah); }
 .redup { color: var(--teks-redup); font-size: 12px; }
+
+/* Panel transaksi yang uangnya sudah keluar tetapi belum dibukukan bank.
+   Diberi tepi tegas supaya tidak terbaca sebagai panel biasa: isinya uang
+   yang TIDAK ikut terhitung di total periode di bawahnya. */
+.panel-peringatan {
+  border-color: rgba(245,165,36,.45);
+  background: linear-gradient(0deg, rgba(245,165,36,.05), rgba(245,165,36,.05)), var(--kartu);
+}
+.panel-peringatan h3 { color: var(--aksen); }

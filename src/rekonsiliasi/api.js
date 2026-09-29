@@ -13,6 +13,7 @@ import { bacaRekeningKoran, BATAS_UKURAN, PENANDA_PENDING } from './baca.js';
 import { GalatFormat, ringkasValidasi } from './parser.js';
 import { idUnggahanValid, periksaHapus, rincianHapus } from './hapus.js';
 import { saringPembayaran, saringPerubahan } from './pembayaran.js';
+import { menyaringTanggal } from './saringan.js';
 import { cariKembar, peringatanSumber, perluKonfirmasi } from './kembar-bayar.js';
 import { cocokkanPending, sudahTersimpan } from './pending.js';
 import { kodeEntitas, labelEntitas, saringanEntitas } from './entitas.js';
@@ -25,6 +26,15 @@ const UKURAN_BATCH = 500;
 
 /** Laporan cetak dibatasi supaya satu permintaan tidak menghasilkan PDF ribuan halaman. */
 const BATAS_CETAK = 5000;
+
+/**
+ * Batas baris PEND yang ikut ditarik di samping hasil bertanggal.
+ *
+ * Longgar dengan sengaja: baris PEND selalu sedikit karena hanya memuat
+ * pergerakan yang belum dibukukan bank. Kalau suatu saat jumlahnya melewati
+ * ini, yang terpotong tetap terlihat lewat hitungannya sendiri.
+ */
+const BATAS_PENDING = 500;
 
 /**
  * Sumber baca untuk layar, ekspor, dan laporan.
@@ -714,6 +724,9 @@ api.get('/transaksi', jalur(async (req, res) => {
     ringkasanSumber = perSumber ?? [];
   }
 
+  // Baris PEND ditarik terpisah, di luar paginasi dan di luar total periode.
+  const pending = await pendingTersaring(sumber, kriteria);
+
   res.json({
     data,
     total: count ?? 0,
@@ -723,8 +736,54 @@ api.get('/transaksi', jalur(async (req, res) => {
       ? ringkasanGabungan(ringkasanSumber)
       : ringkasan?.[0] ?? { jumlah: 0, debit: 0, kredit: 0, net: 0 },
     ringkasan_sumber: ringkasanSumber,
+    pending,
   });
 }));
+
+/**
+ * Baris PEND yang tersingkir oleh penyaringan tanggal.
+ *
+ * Baris PEND tidak punya tanggal, sehingga setiap filter tanggal membuangnya
+ * diam-diam. Uangnya sudah keluar dari rekening; yang belum ada cuma tanggal
+ * bukunya dari BCA. Kalau hanya diandalkan pada filter, transfer paling baru
+ * justru yang paling sering hilang dari layar.
+ *
+ * Ditarik TERPISAH, bukan dengan melonggarkan filternya, supaya total periode
+ * tetap benar untuk periode itu. Mencampurnya akan membuat laporan September
+ * ikut menjumlahkan transaksi yang belum berperiode — kekeliruannya cuma
+ * berpindah tempat.
+ *
+ * Ketika kriteria TIDAK menyaring tanggal, baris PEND sudah ikut di daftar
+ * utama (diurutkan paling atas), jadi di situ blok ini sengaja kosong supaya
+ * tidak tampil dua kali.
+ */
+async function pendingTersaring(sumber, kriteria) {
+  const kosong = { data: [], jumlah: 0, debit: 0, kredit: 0 };
+  if (!menyaringTanggal(kriteria)) return kosong;
+
+  let query = db
+    .from(sumber.tabel)
+    .select(sumber.kolom, { count: 'exact' })
+    .is('tanggal', null)
+    .order('baris_sumber', { ascending: true })
+    .limit(BATAS_PENDING);
+
+  // Kriteria yang sama, TANPA yang bertanggal. Kata kunci, perusahaan, dan
+  // hanya-debit tetap berlaku: blok ini menjawab pertanyaan yang sama, hanya
+  // untuk baris yang belum punya tanggal.
+  query = terapkanKriteria(query, { ...kriteria, dari: null, sampai: null, bulan: null, tahun: null });
+
+  const { data, count, error } = await query;
+  if (error) throw error;
+
+  const baris = data ?? [];
+  return {
+    data: baris,
+    jumlah: count ?? baris.length,
+    debit: baris.reduce((a, t) => a + Number(t.debit ?? 0), 0),
+    kredit: baris.reduce((a, t) => a + Number(t.kredit ?? 0), 0),
+  };
+}
 
 /** Menjumlahkan rincian per sumber menjadi satu ringkasan berbentuk lama. */
 function ringkasanGabungan(perSumber) {
@@ -945,7 +1004,12 @@ api.get('/cetak', jalur(async (req, res) => {
   const { buatPdfLaporan } = await import('./cetak.js');
   const { namaBerkas } = await import('./laporan.js');
 
-  const berkas = await buatPdfLaporan(data ?? [], kriteria);
+  // Uang keluar yang tidak punya tanggal tidak ikut di tabel laporan, karena
+  // ia tidak berada di periode mana pun. Tetapi jumlah dan nilainya HARUS
+  // tercetak, supaya laporan tidak pernah tampak lengkap padahal bukan.
+  const pending = await pendingTersaring(sumber, kriteria);
+
+  const berkas = await buatPdfLaporan(data ?? [], kriteria, new Date(), pending);
 
   res.setHeader('Content-Type', 'application/pdf');
   res.setHeader('Content-Disposition', `attachment; filename="${namaBerkas(kriteria)}"`);
