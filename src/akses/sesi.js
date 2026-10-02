@@ -10,12 +10,37 @@
 // dibaca JavaScript; cookie HttpOnly tidak bisa, sehingga satu celah XSS tidak
 // otomatis berarti sesi tercuri.
 
+import { timingSafeEqual } from 'node:crypto';
 import { createPublicClient } from '../supabase.js';
 import {
   IZIN, izinDibutuhkan, memenuhi, perluSaringEntitas, rapikanJalur, aksiUntuk, detailAman,
 } from './kebijakan.js';
 import { entitasDiizinkan, saringanUntuk, bolehMenulis } from './entitas-akses.js';
 import { bacaKuki, rangkaiKuki, hapusKuki, NAMA_AKSES, NAMA_SEGAR } from './kuki.js';
+
+/**
+ * Token servis untuk integrasi alyssa-dev.
+ *
+ * Dibandingkan dengan timingSafeEqual, bukan `===`. Perbandingan string biasa
+ * berhenti di karakter pertama yang berbeda, sehingga lama jawabannya
+ * membocorkan berapa banyak karakter awal yang sudah benar — cukup untuk
+ * menebak token satu huruf demi satu huruf tanpa pernah menebak seluruhnya.
+ *
+ * TOKEN yang kosong berarti integrasinya MATI, bukan terbuka. Env var yang
+ * lupa diisi tidak boleh berarti siapa pun bisa menarik pembayaran.
+ */
+function tokenServisCocok(header) {
+  const benar = process.env.TOKEN_INTEGRASI ?? '';
+  if (benar.length < 32) return false;
+
+  const dikirim = /^Bearer\s+(.+)$/i.exec(String(header ?? ''))?.[1]?.trim() ?? '';
+  if (dikirim === '') return false;
+
+  const a = Buffer.from(dikirim);
+  const b = Buffer.from(benar);
+  if (a.length !== b.length) return false;
+  return timingSafeEqual(a, b);
+}
 
 /** Cookie tanpa Secure hanya untuk pengembangan lokal tanpa HTTPS. */
 const kukiAman = process.env.KUKI_TIDAK_AMAN !== '1';
@@ -178,6 +203,25 @@ export function middlewareAkses(db, catat, klienPublik = createPublicClient) {
   return async function akses(req, res, next) {
     const izin = izinDibutuhkan(req.method, req.path);
     if (izin === IZIN.PUBLIK) return next();
+
+    // Jalur servis diperiksa SEBELUM sesi dicari: ia tidak punya cookie, tidak
+    // punya profil, dan tidak boleh ikut menyalakan pencarian pengguna.
+    if (izin === IZIN.SERVIS) {
+      if (!tokenServisCocok(req.get('authorization'))) {
+        await catat(req, {
+          aksi: 'DITOLAK',
+          pengguna_email: 'integrasi',
+          objek: 'token_servis',
+          detail: { jalur: rapikanJalur(req.path), metode: req.method },
+        });
+        return res.status(401).json({ pesan: 'Token integrasi tidak sah.', kode: 'token_tidak_sah' });
+      }
+      // Identitas pelakunya mesin. Ditulis eksplisit supaya jejaknya tidak
+      // tampak seperti tindakan orang.
+      req.pengguna = { id: null, email: 'alyssa-dev (integrasi)', nama: 'alyssa-dev', peran: 'SERVIS' };
+      catatPerubahan(req, res, catat);
+      return next();
+    }
 
     if (!(await proteksiAktif(db))) {
       // Belum ada Owner: aplikasi berjalan seperti sebelum lapisan ini ada.

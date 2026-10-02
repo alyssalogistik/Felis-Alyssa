@@ -1455,6 +1455,151 @@ as $fn$
   select count(*)::int from dibuang
 $fn$;
 alter table percobaan_masuk enable row level security;
+--
+--
+--
+--
+--
+--
+create table if not exists pemetaan_supplier (
+  id             uuid primary key default gen_random_uuid(),
+  --
+  supplier_id    text not null check (length(trim(supplier_id)) > 0),
+  supplier_nama  text not null check (length(trim(supplier_nama)) > 0),
+  entitas        text not null,
+  --
+  kunci_saran    text not null check (length(trim(kunci_saran)) > 0),
+  no_rekening_tujuan text,
+  status         text not null default 'aktif'
+                   check (status in ('aktif', 'nonaktif')),
+  dibuat_pada    timestamptz not null default now(),
+  dibuat_oleh    text not null,
+  diubah_pada    timestamptz,
+  diubah_oleh    text
+);
+create index if not exists idx_pemetaan_kunci    on pemetaan_supplier (entitas, kunci_saran);
+create index if not exists idx_pemetaan_supplier on pemetaan_supplier (supplier_id);
+--
+drop view if exists pemetaan_supplier_status;
+create view pemetaan_supplier_status
+with (security_invoker = true) as
+select
+  p.*,
+  (
+    select count(distinct p2.supplier_id)
+    from pemetaan_supplier p2
+    where p2.entitas = p.entitas
+      and p2.kunci_saran = p.kunci_saran
+      and p2.status = 'aktif'
+  ) > 1 as konflik
+from pemetaan_supplier p;
+--
+--
+--
+--
+create table if not exists tautan_pembayaran (
+  transaksi_id   uuid primary key,
+  supplier_id    text not null check (length(trim(supplier_id)) > 0),
+  supplier_nama  text not null check (length(trim(supplier_nama)) > 0),
+  entitas        text not null,
+  tanggal        date not null,
+  nominal        numeric(14, 2) not null check (nominal > 0),
+  sidik          text not null,
+  status         text not null default 'siap'
+                   check (status in ('siap', 'ditarik', 'dibatalkan', 'perlu_koreksi_hilir')),
+  ditautkan_pada timestamptz not null default now(),
+  ditautkan_oleh text not null,
+  batch_tarik    uuid,
+  ditarik_pada   timestamptz,
+  dibatalkan_pada timestamptz,
+  dibatalkan_oleh text,
+  alasan          text
+);
+create index if not exists idx_tautan_status   on tautan_pembayaran (status, entitas);
+create index if not exists idx_tautan_batch    on tautan_pembayaran (batch_tarik);
+create index if not exists idx_tautan_supplier on tautan_pembayaran (supplier_id);
+--
+create table if not exists tautan_pembayaran_riwayat (
+  id               uuid primary key default gen_random_uuid(),
+  transaksi_id     uuid not null,
+  aksi             text not null,
+  supplier_id_lama text,
+  supplier_id_baru text,
+  status_lama      text,
+  status_baru      text,
+  alasan           text,
+  oleh             text not null,
+  pada             timestamptz not null default now()
+);
+create index if not exists idx_tautan_riwayat_transaksi on tautan_pembayaran_riwayat (transaksi_id, pada desc);
+create or replace function tautan_riwayat_hanya_tambah()
+returns trigger
+language plpgsql
+set search_path = public
+as $fn$
+begin
+  raise exception 'tautan_pembayaran_riwayat hanya bisa ditambah, tidak bisa diubah atau dihapus';
+end
+$fn$;
+drop trigger if exists trg_tautan_riwayat_hanya_tambah on tautan_pembayaran_riwayat;
+create trigger trg_tautan_riwayat_hanya_tambah
+  before update or delete on tautan_pembayaran_riwayat
+  for each row execute function tautan_riwayat_hanya_tambah();
+--
+--
+create or replace function lindungi_tautan_tertarik()
+returns trigger
+language plpgsql
+set search_path = public
+as $fn$
+declare
+  st text;
+begin
+  select t.status into st from tautan_pembayaran t where t.transaksi_id = old.id;
+  if st is null then
+    return old;
+  end if;
+  if st in ('ditarik', 'perlu_koreksi_hilir') then
+    raise exception
+      'Transaksi % sudah ditarik alyssa-dev dan tidak bisa dihapus. Batalkan dulu pencatatannya di sana.',
+      old.id;
+  end if;
+  update tautan_pembayaran
+     set status = 'dibatalkan',
+         dibatalkan_pada = now(),
+         dibatalkan_oleh = 'sistem',
+         alasan = 'Baris transaksi bank dihapus.'
+   where transaksi_id = old.id
+     and status = 'siap';
+  insert into tautan_pembayaran_riwayat (transaksi_id, aksi, status_lama, status_baru, alasan, oleh)
+  values (old.id, 'BATAL', st, 'dibatalkan', 'Baris transaksi bank dihapus.', 'sistem');
+  return old;
+end
+$fn$;
+drop trigger if exists trg_lindungi_tautan_tertarik on transaksi_bank;
+create trigger trg_lindungi_tautan_tertarik
+  before delete on transaksi_bank
+  for each row execute function lindungi_tautan_tertarik();
+--
+drop view if exists transaksi_bank_kembar;
+create view transaksi_bank_kembar
+with (security_invoker = true) as
+select
+  t.id,
+  t.entitas,
+  md5(
+    t.entitas                                                           || '|' ||
+    coalesce((t.tanggal - date '1970-01-01')::text, '')                 || '|' ||
+    lower(regexp_replace(coalesce(t.keterangan, ''), '\s+', ' ', 'g'))  || '|' ||
+    coalesce(t.debit,  0)::text                                         || '|' ||
+    coalesce(t.kredit, 0)::text                                         || '|' ||
+    lower(coalesce(t.referensi, ''))
+  ) as sidik_tampil
+from transaksi_bank t;
+--
+alter table pemetaan_supplier          enable row level security;
+alter table tautan_pembayaran          enable row level security;
+alter table tautan_pembayaran_riwayat  enable row level security;
 
 -- Setelah skema berubah, PostgREST masih memakai peta lama sampai diberi
 -- tahu. Tanpa ini tabel baru tetap dilaporkan "not found in the schema

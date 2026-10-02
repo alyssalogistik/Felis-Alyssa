@@ -29,6 +29,7 @@ const urutan = [
   '0010_audit_mekari.sql',
   '0011_pengguna_dan_jejak.sql',
   '0012_batas_percobaan_masuk.sql',
+  '0013_integrasi_supplier.sql',
 ];
 
 // Komentar dibuang supaya yang harus disalin lewat layar sentuh sependek

@@ -932,6 +932,117 @@ Dua hal yang mudah salah:
   tanpa data locale `id-ID` dan diam-diam jatuh ke format Inggris, sehingga
   laporan mencetak "Rp 2,500,000" yang salah baca di Indonesia.
 
+## Integrasi pembayaran ke alyssa-dev
+
+Master supplier ada di **alyssa-dev**, bukan di sini. Felis-Alyssa menyediakan
+transaksi bank yang sudah diikat ke satu supplier, lalu alyssa-dev **menarik**
+nya. Arahnya satu: tidak ada panggilan dari sini ke sana, sehingga kredensial
+alyssa-dev tidak pernah perlu ada di environment ini.
+
+### Nama supplier tidak pernah menjadi identitas
+
+Nama di rekening koran adalah tebakan dari teks bank. Diukur pada 453 transaksi
+keluar sungguhan: 138 nama dihasilkan, 18 di antaranya menggabungkan beberapa
+ejaan, dan namanya dipotong 18 karakter. Yang mengikat selalu `supplier_id`
+dari alyssa-dev, dipilih manusia, disimpan per transaksi fisik.
+
+`pemetaan_supplier` hanya **ingatan**: kedua kali keterangan serupa muncul, ia
+mengusulkan supplier yang sama seperti kemarin. Ia tidak pernah mengikat
+sendiri.
+
+**Konflik dihitung, tidak disimpan.** Dua supplier bernama sama adalah keadaan
+yang sah. `pemetaan_supplier_status` menghitung `konflik` saat dibaca; menyimpan
+nya sebagai kolom akan basi begitu salah satu pemetaan dihapus, dan tanda yang
+salah di sini menghentikan pekerjaan tanpa sebab yang terlihat. Saat konflik,
+tidak ada yang disarankan — tetapi pengikatannya tetap boleh jalan, karena
+memblokir akan membuat orang mencari jalan pintas.
+
+### Nomor rekening supplier tidak ada di rekening koran
+
+Diukur pada 453 transaksi keluar: **nol** yang memuat nomor rekening tujuan.
+Yang BCA cetak hanya kode bank 3 digit dan nama penerima, dan 235 dari 453 pun
+tidak memuat kode banknya. Karena itu `bank_account_number` pada payload
+**selalu null** — mengisinya dari master akan membuat payload tampak seolah bank
+mengonfirmasi rekening tujuan. `no_rekening` pada `transaksi_bank` adalah
+rekening PT/CV sendiri, bukan rekening supplier.
+
+### Anti-dobel: `transaksi_bank.id` fisik
+
+`tautan_pembayaran.transaksi_id` adalah **PRIMARY KEY**. Bukan pemeriksaan di
+aplikasi, bukan unique tambahan: satu id tidak mungkin punya dua baris, dari
+jalur mana pun baris itu ditulis.
+
+**Dibaca dari TABEL `transaksi_bank`, tidak pernah dari view
+`transaksi_bank_unik`.** View itu melipat salinan, dan baris wakil yang muncul
+berpindah ke uuid lain begitu salinan yang berbeda dikonfirmasi atau direkon —
+idempotency yang dikunci padanya akan meloloskan transaksi yang sama dua kali.
+
+Satu transfer tetap bisa punya dua baris fisik: `sidik` ikut menghitung
+`no_rekening` sedangkan sidik tampilan tidak, jadi baris lama yang belum
+menyimpan nomor rekening dan unggahan baru yang menyimpannya tersimpan berdua
+lalu dilipat di layar. `transaksi_bank_kembar` memaparkan rumus sidik tampilan
+itu supaya aplikasi bisa menolak pengikatan salinannya — rumusnya dibaca dari
+view, tidak disalin ke JavaScript, karena salinan yang menyimpang akan
+melewatkan kembar yang seharusnya tertahan.
+
+### Penarikan dua fase
+
+`GET /integrasi/siap-tarik` **murni baca dan tidak menandai apa pun.** Kalau
+pembacaan yang menandai, satu alyssa-dev yang mati di tengah jalan membuat
+pembayaran hilang selamanya: di sini dianggap terkirim, di sana tidak pernah
+tersimpan, tanpa gejala apa pun. Dengan dua fase, kegagalan menghasilkan
+penarikan ULANG — dan itu ditahan `idempotency_key` di kedua sisi. Arah
+kesalahannya dipilih sadar: terkirim dua kali bisa ditolak, tidak pernah
+terkirim tidak bisa dideteksi.
+
+### Koreksi sesudah ditarik tidak pernah diam-diam
+
+Yang belum ditarik diubah langsung. Yang sudah ditarik menjadi
+`perlu_koreksi_hilir` dan muncul di `GET /integrasi/koreksi` sampai alyssa-dev
+mengakuinya — alyssa-dev sudah mencatat pembayaran ke supplier lama, dan
+mengubahnya di sini tanpa memberi tahu akan membuat dua buku besar berbeda
+tanpa satu pun galat.
+
+Pembatalan sesudah ditarik tidak disediakan. Uangnya sudah keluar dari
+rekening; yang bisa dibatalkan hanya pencatatannya, dan itu keputusan akuntansi
+di alyssa-dev.
+
+### Tiga penjaga di database, bukan hanya di aplikasi
+
+- `tautan_pembayaran_riwayat` **hanya bisa ditambah**, termasuk dari service_role.
+- Menghapus `transaksi_bank` yang tautannya sudah `ditarik` **ditolak**; yang
+  masih `siap` cukup dibatalkan tautannya. Dipasang sebagai trigger, bukan di
+  `hapus.js`, karena penghapusan bisa datang dari SQL Editor juga.
+- Ketiga tabel baru: RLS menyala tanpa policy, seperti seluruh tabel lain.
+
+`tautan_pembayaran` **tanpa kunci asing ke `transaksi_bank`**, dan itu
+disengaja. Menghapus unggahan sudah cascade ke `transaksi_bank`: dengan cascade
+baris tautannya ikut hilang dan penjaga anti-dobel hilang bersamanya; dengan
+restrict penghapusan unggahan yang sudah berjalan bertahun-tahun mendadak
+gagal. Pola yang sama dipakai `jejak_aktivitas` dan `pembayaran_manual_riwayat`.
+
+### Token servis terpisah dari sesi
+
+`IZIN.SERVIS` di `kebijakan.js` diperiksa dengan `Authorization: Bearer` dari
+`TOKEN_INTEGRASI`, **tidak pernah cookie** — dan sebaliknya, sesi yang sah
+tidak pernah bisa memakai jalur `/integrasi`. Token yang bocor tidak boleh bisa
+menyentuh pengguna, rekonsiliasi, maupun penghapusan; sesi yang dibajak tidak
+boleh bisa mengalirkan uang ke sistem lain.
+
+Dibandingkan dengan `timingSafeEqual`, bukan `===`: perbandingan string berhenti
+di karakter pertama yang berbeda, sehingga lama jawabannya membocorkan berapa
+karakter awal yang sudah benar. **`TOKEN_INTEGRASI` yang kosong berarti
+integrasinya MATI, bukan terbuka.**
+
+### Batasan yang diketahui
+
+Satu transfer yang masuk dari dua cetakan BCA dengan kalimat berbeda
+(e-statement vs Mutasi) menghasilkan sidik tampilan yang berbeda pula, sehingga
+`transaksi_bank_kembar` tidak mengenalinya sebagai salinan. Yang menahannya
+tetap `sudahTersimpan()` di jalur unggah, dan itu hanya bekerja bila saldo dan
+nominalnya cocok persis. Di luar itu keduanya bisa ditautkan terpisah dan perlu
+mata manusia.
+
 ## Audit pembayaran supplier
 
 Aturan pencocokan hanya ada di `src/rekonsiliasi/pencocokan.js` — murni, tanpa

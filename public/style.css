@@ -852,3 +852,46 @@ body.terkunci { overflow: hidden; }
   background: linear-gradient(0deg, rgba(245,165,36,.05), rgba(245,165,36,.05)), var(--kartu);
 }
 .panel-peringatan h3 { color: var(--aksen); }
+
+/* --- Hubungkan ke Supplier (integrasi alyssa-dev) ------------------------ */
+
+/* Kolom kotak pilih dibuat sesempit mungkin: ia tambahan di atas tabel yang
+   sudah padat, dan keterangan transaksi yang menyempit akan terpotong. */
+.pilih-kolom { width: 2.2rem; text-align: center; }
+
+/* summary SENGAJA tidak diberi display:flex. Itu menghilangkan segitiga
+   pembuka bawaan peramban, dan panel yang tidak tampak bisa dibuka akan
+   terlewat begitu saja. */
+.panel-tautan > summary { cursor: pointer; font-weight: 600; }
+
+.lencana-tautan {
+  display: inline-block;
+  padding: 0.1rem 0.45rem;
+  border-radius: 999px;
+  font-size: 0.78rem;
+  white-space: nowrap;
+}
+.lencana-siap    { background: #1d4ed8; color: #fff; }
+.lencana-ditarik { background: #15803d; color: #fff; }
+.lencana-koreksi { background: #b45309; color: #fff; }
+.lencana-batal   { background: #475569; color: #fff; }
+
+.peringatan-konflik {
+  border-left: 3px solid #f59e0b;
+  padding: 0.5rem 0.75rem;
+  margin: 0.5rem 0;
+}
+
+.kandidat-supplier { display: flex; flex-wrap: wrap; gap: 0.4rem; margin: 0.5rem 0; }
+.kandidat-supplier small { opacity: 0.7; margin-left: 0.3rem; }
+
+.sr-only {
+  position: absolute; width: 1px; height: 1px;
+  padding: 0; margin: -1px; overflow: hidden;
+  clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0;
+}
+
+/* Yang hanya berguna di layar tidak ikut tercetak. */
+@media print {
+  .pilih-kolom, .supplier-sel, .supplier-kolom, .panel-tautan { display: none !important; }
+}
