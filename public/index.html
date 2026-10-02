@@ -494,6 +494,41 @@
       <p id="pesan-cetak" class="pesan" hidden></p>
     </div>
 
+    <!-- Mengikat transaksi terpilih ke supplier di alyssa-dev.
+         Nama supplier tidak pernah menjadi identitas: yang disimpan
+         supplier_id dari alyssa-dev, dan manusia yang memilihnya. -->
+    <details class="panel panel-tautan" id="panel-tautan">
+      <summary>Hubungkan ke Supplier (alyssa-dev)</summary>
+
+      <div id="tautan-ringkasan"></div>
+
+      <p class="keterangan-panel" id="tautan-terpilih">Belum ada transaksi dipilih.</p>
+      <div id="tautan-saran"></div>
+
+      <div class="baris-formulir">
+        <label>
+          supplier_id (dari alyssa-dev)
+          <input type="text" id="tautan-supplier-id" placeholder="mis. SUP-00123" autocomplete="off">
+        </label>
+        <label>
+          Nama supplier (display)
+          <input type="text" id="tautan-supplier-nama" placeholder="mis. MARTHEN RUNTURAMBI" autocomplete="off">
+        </label>
+        <label>
+          No. rekening tujuan (opsional)
+          <input type="text" id="tautan-rekening" placeholder="dari master alyssa-dev" autocomplete="off">
+        </label>
+      </div>
+
+      <p class="keterangan-panel">
+        Nomor rekening di atas berasal dari master supplier alyssa-dev, bukan dari
+        rekening koran &mdash; BCA tidak mencetak nomor rekening tujuan pada transfer keluar.
+      </p>
+
+      <button type="button" id="tautan-simpan" class="tombol" disabled>Simpan Tautan</button>
+      <p class="pesan" id="tautan-pesan" hidden></p>
+    </details>
+
     <!-- Kop dokumen: tersembunyi di layar, muncul hanya saat halaman dicetak
          langsung dari peramban. Tombol Cetak sendiri mencetak PDF resmi. -->
     <div id="kop-cetak" class="kop-cetak" aria-hidden="true"></div>
@@ -502,6 +537,7 @@
       <table class="tabel" id="tabel-bayaran">
         <thead>
           <tr>
+            <th class="pilih-kolom"><span class="sr-only">Pilih</span></th>
             <th>Tanggal</th>
             <th>Sumber</th>
             <th>Keterangan Transaksi</th>
@@ -509,6 +545,7 @@
             <th class="angka-kolom">Kredit / Masuk</th>
             <th class="angka-kolom">Nominal</th>
             <th>Referensi</th>
+            <th class="supplier-kolom">Supplier</th>
           </tr>
         </thead>
         <tbody id="isi-tabel-bayaran"></tbody>

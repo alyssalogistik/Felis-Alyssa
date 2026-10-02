@@ -120,8 +120,17 @@ function baris(t) {
   const sumber = t.sumber ?? 'BCA';
   const manual = (t.asal ?? 'bank') === 'manual';
 
+  // Kotak pilih hanya untuk baris rekening koran yang berupa pengeluaran dan
+  // sudah bertanggal. Pembayaran manual bukan transaksi bank, dan baris PEND
+  // belum punya tanggal buku — mengirim keduanya ke alyssa-dev akan mencatat
+  // pembayaran yang tidak bisa dipertanggungjawabkan ke mutasi bank.
+  const bisaDipilih = !manual && Number(t.debit ?? 0) > 0 && Boolean(t.tanggal);
+
   return `
-    <tr${manual ? ' class="baris-manual"' : ''}>
+    <tr${manual ? ' class="baris-manual"' : ''} data-transaksi="${aman(t.id ?? '')}">
+      <td class="pilih-kolom">${bisaDipilih
+        ? `<input type="checkbox" class="pilih-transaksi" value="${aman(t.id)}" aria-label="Pilih transaksi">`
+        : ''}</td>
       <td>${aman(formatTanggalPolos(t.tanggal))}${t.tanggal_ambigu ? ' <span class="tanda" title="Tanggal ambigu">?</span>' : ''}</td>
       <td><span class="lencana-sumber${manual ? ' sumber-manual' : ''}">${aman(sumber)}</span></td>
       <td class="keterangan-sel">${aman(t.keterangan)}</td>
@@ -129,6 +138,7 @@ function baris(t) {
       <td class="angka-kolom">${formatNominal(t.kredit)}</td>
       <td class="angka-kolom">${aman(rupiah.format(nominal))}</td>
       <td>${t.referensi ? aman(t.referensi) : '<span class="nol">-</span>'}</td>
+      <td class="supplier-sel" data-supplier-untuk="${aman(t.id ?? '')}"></td>
     </tr>`;
 }
 
@@ -240,7 +250,7 @@ export async function cariBayaran(lanjut = false) {
 
     // Pesan "hasil dikosongkan" milik pencarian sebelumnya tidak boleh
     // menempel di atas hasil yang baru.
-    kotak.innerHTML = `<tr><td colspan="7">${kosong('Mencari…')}</td></tr>`;
+    kotak.innerHTML = `<tr><td colspan="9">${kosong('Mencari…')}</td></tr>`;
     pesanCetak('', '');
   }
 
@@ -272,7 +282,7 @@ export async function cariBayaran(lanjut = false) {
 
       const isi = hasil.data.map(baris).join('');
       if (pertama) {
-        kotak.innerHTML = isi || `<tr><td colspan="7">${kosong('Tidak ada hasil.')}</td></tr>`;
+        kotak.innerHTML = isi || `<tr><td colspan="9">${kosong('Tidak ada hasil.')}</td></tr>`;
         pertama = false;
       } else if (isi !== '') {
         kotak.insertAdjacentHTML('beforeend', isi);
@@ -290,10 +300,15 @@ export async function cariBayaran(lanjut = false) {
     tampilRingkasan(total, ringkasan, adaKataKunci, hanyaDebit, pending);
     gambarKopCetak(total, ringkasan);
     el('muat-bayaran').hidden = mulai >= total;
+
+    // Lencana supplier diisi modul lain. Lewat event, bukan impor langsung,
+    // supaya pencarian tetap berjalan apa adanya kalau modul itu tidak ada —
+    // dan supaya tidak ada impor melingkar antara keduanya.
+    document.dispatchEvent(new CustomEvent('bayaran-digambar'));
   } catch (error) {
     if (giliran !== giliranAktif) return;
 
-    kotak.innerHTML = `<tr><td colspan="7">${kosong(error.message)}</td></tr>`;
+    kotak.innerHTML = `<tr><td colspan="9">${kosong(error.message)}</td></tr>`;
     el('ringkasan-bayaran').innerHTML = '';
     if (el('pending-bayaran')) el('pending-bayaran').hidden = true;
     el('muat-bayaran').hidden = true;
@@ -436,7 +451,7 @@ function kosongkanHasil() {
   giliranAktif += 1;
 
   el('isi-tabel-bayaran').innerHTML =
-    `<tr><td colspan="7">${kosong('Hasil dikosongkan setelah PDF disimpan. Tekan Cari / Terapkan Filter untuk menampilkannya lagi.')}</td></tr>`;
+    `<tr><td colspan="9">${kosong('Hasil dikosongkan setelah PDF disimpan. Tekan Cari / Terapkan Filter untuk menampilkannya lagi.')}</td></tr>`;
   el('ringkasan-bayaran').innerHTML = '';
   el('muat-bayaran').hidden = true;
 
@@ -448,6 +463,8 @@ function kosongkanHasil() {
 
   const kop = el('kop-cetak');
   if (kop) kop.innerHTML = '';
+
+  document.dispatchEvent(new CustomEvent('bayaran-digambar'));
 }
 
 /**

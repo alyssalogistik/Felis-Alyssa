@@ -2,6 +2,7 @@ import { Router } from 'express';
 import { createAdminClient } from './supabase.js';
 import rekonsiliasi from './rekonsiliasi/api.js';
 import mekari from './mekari/api.js';
+import integrasi from './integrasi/api.js';
 import akses from './akses/api.js';
 import { middlewareAkses } from './akses/sesi.js';
 import { buatPencatat } from './akses/jejak.js';
@@ -181,5 +182,10 @@ api.get('/trip', jalur(async (_req, res) => {
 
 api.use('/rekonsiliasi', rekonsiliasi);
 api.use('/mekari', mekari);
+
+// Jalur /tautan dan /integrasi didaftarkan dengan jalur penuh di modulnya,
+// karena keduanya memakai autentikasi yang berbeda dan kebijakan.js menyebut
+// pola jalurnya apa adanya.
+api.use(integrasi);
 
 export default api;

@@ -17,6 +17,7 @@
 /** Kelas izin, dari paling longgar ke paling ketat. */
 export const IZIN = {
   PUBLIK: 'PUBLIK',
+  SERVIS: 'SERVIS',
   SESI: 'SESI',
   BACA: 'BACA',
   PERIKSA: 'PERIKSA',
@@ -35,6 +36,27 @@ export const IZIN = {
 const PUBLIK = [
   ['GET', /^\/lacak\/[^/]+$/],
   ['POST', /^\/auth\/masuk$/],
+];
+
+/**
+ * Jalur integrasi: dipanggil mesin, bukan orang.
+ *
+ * alyssa-dev MENARIK transaksi yang sudah siap dari sini. Autentikasinya token
+ * servis di header Authorization, TIDAK PERNAH cookie sesi — dan sebaliknya,
+ * sesi yang sah tidak pernah bisa memakai jalur ini. Pemisahan itu disengaja:
+ * token yang bocor tidak boleh bisa menyentuh pengguna, rekonsiliasi, maupun
+ * penghapusan, dan sesi peramban yang dibajak tidak boleh bisa mengalirkan
+ * uang ke sistem lain.
+ *
+ * Disebut satu per satu, bukan sebagai pola luas `/integrasi/*`: jalur baru
+ * yang ditambahkan di bawah /integrasi nanti TIDAK otomatis ikut terbuka bagi
+ * token, melainkan jatuh ke bawaan OWNER dan langsung ketahuan saat dicoba.
+ */
+const SERVIS = [
+  ['GET', /^\/integrasi\/siap-tarik$/],
+  ['POST', /^\/integrasi\/tandai-tertarik$/],
+  ['GET', /^\/integrasi\/koreksi$/],
+  ['POST', /^\/integrasi\/koreksi\/akui$/],
 ];
 
 /** Butuh sesi, tapi tidak butuh peran apa pun. */
@@ -87,6 +109,7 @@ export function izinDibutuhkan(metode, jalurMentah) {
   const jalur = rapikanJalur(jalurMentah);
 
   if (cocok(PUBLIK, m, jalur)) return IZIN.PUBLIK;
+  if (cocok(SERVIS, m, jalur)) return IZIN.SERVIS;
   if (cocok(SESI, m, jalur)) return IZIN.SESI;
   if (OWNER_WALAU_GET.some((pola) => pola.test(jalur))) return IZIN.OWNER;
   if (cocok(PERIKSA, m, jalur)) return IZIN.PERIKSA;
@@ -99,6 +122,11 @@ export function izinDibutuhkan(metode, jalurMentah) {
 /** Apakah profil ini memenuhi izin yang dibutuhkan. */
 export function memenuhi(izin, profil) {
   if (izin === IZIN.PUBLIK) return true;
+
+  // Sesi peramban TIDAK PERNAH memenuhi izin servis, termasuk sesi Owner.
+  // Jalur itu diperiksa dengan token di middleware dan tidak punya jalan lain.
+  if (izin === IZIN.SERVIS) return false;
+
   if (!profil) return false;
   if (profil.status !== 'AKTIF') return false;
 
@@ -112,7 +140,9 @@ export function memenuhi(izin, profil) {
 
 /** Permintaan ini menyentuh data yang harus tersaring per perusahaan? */
 export function perluSaringEntitas(izin) {
-  return izin !== IZIN.PUBLIK && izin !== IZIN.SESI;
+  // Jalur servis tidak punya profil, jadi tidak ada entitas yang bisa disaring
+  // darinya. Pembatasannya datang dari parameter permintaan, diperiksa handler.
+  return izin !== IZIN.PUBLIK && izin !== IZIN.SESI && izin !== IZIN.SERVIS;
 }
 
 /**
@@ -143,6 +173,9 @@ export function aksiUntuk(metode, jalurMentah) {
     return 'JALANKAN_AUDIT';
   }
   if (/^\/rekonsiliasi\/pembayaran/.test(jalur)) return 'UBAH_PEMBAYARAN';
+  if (/^\/integrasi\/tandai-tertarik$/.test(jalur)) return 'TARIK_PEMBAYARAN';
+  if (/^\/integrasi\/koreksi\/akui$/.test(jalur)) return 'AKUI_KOREKSI';
+  if (/^\/tautan(\/|$)/.test(jalur)) return 'UBAH_TAUTAN_SUPPLIER';
   return 'UBAH_DATA';
 }
 
