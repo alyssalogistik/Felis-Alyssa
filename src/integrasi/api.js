@@ -22,6 +22,7 @@ import {
   STATUS, AKSI, SEBAB,
   kunciSaran, layakDitautkan, supplierValid, pilihSaran, layakDitarik, payloadPembayaran,
 } from './tautan.js';
+import { lengkapiRingkasan, lengkapiRincian } from './ringkas.js';
 
 const db = createAdminClient();
 const api = Router();
@@ -169,6 +170,153 @@ api.get('/tautan/pemetaan', jalur(async (req, res) => {
   const semua = data ?? [];
   const hanyaKonflik = String(req.query.status ?? '') === 'konflik';
   res.json({ data: hanyaKonflik ? semua.filter((p) => p.konflik) : semua });
+}));
+
+/**
+ * Riwayat pembayaran per supplier, DIPISAH PER ENTITAS.
+ *
+ * PT dan CV membayar sebagian supplier yang sama dari rekening yang berbeda.
+ * Menggabungkan totalnya membuat kewajiban satu perusahaan tampak terbayar
+ * oleh uang perusahaan lain — kekeliruan yang tidak menimbulkan galat apa pun
+ * dan baru ketahuan saat angkanya dipakai.
+ */
+api.get('/tautan/supplier', jalur(async (req, res) => {
+  let q = db.from('riwayat_pembayaran_supplier').select('*');
+
+  if (req.query.entitas) {
+    const kode = kodeEntitas(req.query.entitas);
+    if (!kode) return res.status(400).json({ pesan: 'Entitas tidak dikenali.' });
+    q = q.eq('entitas', kode);
+  }
+  if (req.query.cari) {
+    // Pencarian pada NAMA hanya jalan pintas untuk menemukan barisnya; yang
+    // mengelompokkan tetap supplier_id.
+    const kata = String(req.query.cari).trim().replace(/\s+/g, ' ');
+    if (kata !== '') q = q.or(`supplier_nama.ilike.%${kata}%,supplier_id.ilike.%${kata}%`);
+  }
+
+  const { data, error } = await q.order('supplier_nama', { ascending: true }).limit(2000);
+  if (error) throw error;
+
+  res.json({ data: (data ?? []).map(lengkapiRingkasan) });
+}));
+
+/**
+ * Rincian pembayaran satu supplier: tiap transaksi berdiri sendiri.
+ *
+ * Nama penerima bank diteruskan APA ADANYA. Itulah bukti siapa yang benar-benar
+ * menerima transfer, dan satu-satunya yang bisa dicocokkan kembali ke mutasi
+ * bank saat audit. Ia tidak pernah diganti dengan nama supplier administrasi.
+ */
+api.get('/tautan/supplier/:supplier_id', jalur(async (req, res) => {
+  const kode = req.query.entitas ? kodeEntitas(req.query.entitas) : null;
+  if (req.query.entitas && !kode) return res.status(400).json({ pesan: 'Entitas tidak dikenali.' });
+
+  let q = db
+    .from('tautan_pembayaran').select(KOLOM_TAUTAN)
+    .eq('supplier_id', req.params.supplier_id)
+    .neq('status', STATUS.DIBATALKAN);
+  if (kode) q = q.eq('entitas', kode);
+
+  const { data: tautan, error } = await q.order('tanggal', { ascending: true }).limit(2000);
+  if (error) throw error;
+  if ((tautan ?? []).length === 0) return res.json({ data: [], ringkasan: null });
+
+  const idTrx = tautan.map((t) => t.transaksi_id);
+
+  const { data: trx, error: galatTrx } = await db
+    .from('transaksi_bank').select(KOLOM_TRX).in('id', idTrx);
+  if (galatTrx) throw galatTrx;
+  const petaTrx = new Map((trx ?? []).map((t) => [t.id, t]));
+
+  const { data: alokasi, error: galatAlokasi } = await db
+    .from('alokasi_pembayaran').select('transaksi_id, keterangan, dicatat_pada, dicatat_oleh')
+    .in('transaksi_id', idTrx);
+  if (galatAlokasi) throw galatAlokasi;
+  const petaAlokasi = new Map((alokasi ?? []).map((a) => [a.transaksi_id, a]));
+
+  let ringkasan = null;
+  if (kode) {
+    const { data: r, error: galatR } = await db
+      .from('riwayat_pembayaran_supplier').select('*')
+      .eq('supplier_id', req.params.supplier_id).eq('entitas', kode).maybeSingle();
+    if (galatR) throw galatR;
+    ringkasan = r ? lengkapiRingkasan(r) : null;
+  }
+
+  res.json({
+    ringkasan,
+    data: tautan.map((t) => lengkapiRincian(t, petaTrx.get(t.transaksi_id), petaAlokasi.get(t.transaksi_id))),
+  });
+}));
+
+/**
+ * Menetapkan kewajiban supplier. OPSIONAL.
+ *
+ * Tanpa baris ini, sisa pembayaran dilaporkan TIDAK DIKETAHUI — bukan nol.
+ * Nol berarti lunas, dan itu kesimpulan yang tidak boleh ditebak dari
+ * kewajiban yang memang belum pernah ditetapkan.
+ */
+api.put('/tautan/kewajiban/:supplier_id', jalur(async (req, res) => {
+  const { entitas, nilai, catatan } = req.body ?? {};
+
+  const kode = kodeEntitas(entitas);
+  if (!kode) return res.status(400).json({ pesan: 'Entitas wajib disebut: PT atau CV.' });
+
+  const angka = Number(nilai);
+  if (!Number.isFinite(angka) || angka < 0) {
+    return res.status(400).json({ pesan: 'Nilai kewajiban harus angka tidak negatif.' });
+  }
+
+  const { data, error } = await db
+    .from('kewajiban_supplier')
+    .upsert({
+      supplier_id: String(req.params.supplier_id).trim(),
+      entitas: kode,
+      nilai: angka,
+      catatan: catatan?.trim() || null,
+      ditetapkan_pada: new Date().toISOString(),
+      ditetapkan_oleh: pelaku(req),
+    }, { onConflict: 'supplier_id,entitas' })
+    .select()
+    .single();
+  if (error) throw error;
+
+  res.json(data);
+}));
+
+/**
+ * Alokasi manual: catatan pekerjaan/proyek selama PO belum tertib.
+ *
+ * Teks bebas, dan TIDAK satu pun total dihitung darinya. Ia keterangan audit,
+ * bukan penggerak angka — supaya catatan yang keliru tidak pernah bisa
+ * menggeser jumlah uang.
+ */
+api.put('/tautan/alokasi/:transaksi_id', jalur(async (req, res) => {
+  const keterangan = String(req.body?.keterangan ?? '').trim();
+  if (!POLA_UUID.test(String(req.params.transaksi_id))) {
+    return res.status(400).json({ pesan: 'transaksi_id tidak sah.' });
+  }
+
+  if (keterangan === '') {
+    const { error } = await db.from('alokasi_pembayaran').delete().eq('transaksi_id', req.params.transaksi_id);
+    if (error) throw error;
+    return res.json({ transaksi_id: req.params.transaksi_id, keterangan: null });
+  }
+
+  const { data, error } = await db
+    .from('alokasi_pembayaran')
+    .upsert({
+      transaksi_id: req.params.transaksi_id,
+      keterangan,
+      dicatat_pada: new Date().toISOString(),
+      dicatat_oleh: pelaku(req),
+    }, { onConflict: 'transaksi_id' })
+    .select()
+    .single();
+  if (error) throw error;
+
+  res.json(data);
 }));
 
 /**

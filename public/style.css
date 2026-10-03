@@ -895,3 +895,32 @@ body.terkunci { overflow: hidden; }
 @media print {
   .pilih-kolom, .supplier-sel, .supplier-kolom, .panel-tautan { display: none !important; }
 }
+
+/* --- Riwayat Pembayaran Supplier ---------------------------------------- */
+
+.panel-riwayat > summary { cursor: pointer; font-weight: 600; }
+
+.kartu-supplier {
+  border: 1px solid rgba(148, 163, 184, 0.3);
+  border-radius: 8px;
+  padding: 0.75rem 1rem;
+  margin: 0.75rem 0;
+}
+.kartu-supplier > header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+}
+.kartu-supplier code {
+  font-size: 0.8rem;
+  opacity: 0.75;
+}
+.kartu-supplier .rincian-supplier:empty { display: none; }
+.kartu-supplier .rincian-supplier { margin-top: 0.6rem; }
+
+.lencana-netral { background: #475569; color: #fff; }
+
+@media print {
+  .panel-riwayat { display: none !important; }
+}

@@ -236,3 +236,142 @@ export function pasangKendaliTautan() {
   perbaruiHitungan();
   muatRingkasanSiap();
 }
+
+// ---------------------------------------------------------------------------
+// Riwayat pembayaran per supplier, DIPISAH per entitas
+//
+// PT dan CV membayar sebagian supplier yang sama dari rekening yang berbeda.
+// Menggabungkan totalnya membuat kewajiban satu perusahaan tampak terbayar
+// oleh uang perusahaan lain, tanpa satu pun galat.
+// ---------------------------------------------------------------------------
+
+const LABEL_ENTITAS = {
+  PT_ALYSSA_AUTO_LOGISTIK: 'PT Alyssa Auto Logistik',
+  CV_ALYSSA_TRANS_UTAMA: 'CV Alyssa Trans Utama',
+};
+
+const LABEL_STATUS = {
+  BELUM_DITETAPKAN: ['netral', 'Kewajiban belum ditetapkan'],
+  BELUM_BAYAR: ['koreksi', 'Belum dibayar'],
+  SEBAGIAN: ['koreksi', 'Sebagian'],
+  LUNAS: ['ditarik', 'Lunas'],
+  LEBIH_BAYAR: ['batal', 'Lebih bayar'],
+};
+
+const rp = (n) => (n === null || n === undefined ? '-' : rupiah.format(Number(n)));
+
+function kartuSupplier(s) {
+  const [kelas, teks] = LABEL_STATUS[s.status] ?? ['netral', s.status];
+  return `
+    <article class="kartu-supplier" data-supplier="${aman(s.supplier_id)}" data-entitas="${aman(s.entitas)}">
+      <header>
+        <b>${aman(s.supplier_nama)}</b>
+        <code>${aman(s.supplier_id)}</code>
+        <span class="lencana-tautan lencana-${aman(kelas)}">${aman(teks)}</span>
+      </header>
+      <p class="keterangan-panel">${aman(LABEL_ENTITAS[s.entitas] ?? s.entitas)}</p>
+      ${s.ejaan_tidak_seragam
+        ? '<p class="peringatan-konflik">⚠ supplier_id ini tersimpan dengan lebih dari satu ejaan nama. '
+          + 'Totalnya tetap benar karena dikelompokkan dari id, tetapi ejaannya perlu dirapikan.</p>'
+        : ''}
+      <div class="ringkas">
+        <div><b>${s.jumlah_pembayaran}</b><small>Pembayaran</small></div>
+        <div class="r-debit"><b>${aman(rp(s.total_dibayar))}</b><small>Total dibayar</small></div>
+        <div><b>${aman(rp(s.kewajiban))}</b><small>Kewajiban</small></div>
+        <div><b>${aman(rp(s.sisa))}</b><small>Sisa</small></div>
+      </div>
+      <button type="button" class="tombol-lembut lihat-rincian">Lihat rincian pembayaran</button>
+      <div class="rincian-supplier"></div>
+    </article>`;
+}
+
+function barisRincian(r) {
+  return `
+    <tr>
+      <td>${aman(r.tanggal ?? '-')}</td>
+      <td class="keterangan-sel">
+        ${aman(r.keterangan_bank ?? '-')}
+        ${r.penerima_berbeda
+          ? ' <span class="tanda" title="Nama penerima transfer berbeda dari nama supplier administrasi">⚠ penerima berbeda</span>'
+          : ''}
+      </td>
+      <td class="angka-kolom keluar">${aman(rp(r.nominal))}</td>
+      <td>${aman(r.status)}</td>
+      <td class="keterangan-sel">${r.alokasi_manual ? aman(r.alokasi_manual) : '<span class="nol">-</span>'}</td>
+    </tr>`;
+}
+
+async function muatRincian(kartu) {
+  const kotak = kartu.querySelector('.rincian-supplier');
+  kotak.innerHTML = '<p class="kosong">Memuat…</p>';
+
+  const parameter = new URLSearchParams({ entitas: kartu.dataset.entitas });
+  let hasil;
+  try {
+    hasil = await ambil(`/tautan/supplier/${encodeURIComponent(kartu.dataset.supplier)}?${parameter}`);
+  } catch (galat) {
+    kotak.innerHTML = `<p class="kosong">${aman(galat.message)}</p>`;
+    return;
+  }
+
+  kotak.innerHTML = `
+    <div class="gulir-mendatar">
+      <table class="tabel">
+        <thead><tr>
+          <th>Tanggal</th><th>Penerima / Keterangan Bank</th>
+          <th class="angka-kolom">Nominal</th><th>Status</th><th>Alokasi</th>
+        </tr></thead>
+        <tbody>${hasil.data.map(barisRincian).join('')}</tbody>
+      </table>
+    </div>`;
+}
+
+export async function muatRiwayatSupplier() {
+  const kotak = el('riwayat-isi');
+  if (!kotak) return;
+
+  kotak.innerHTML = '<p class="kosong">Memuat…</p>';
+  const parameter = new URLSearchParams();
+  const entitas = el('riwayat-entitas')?.value ?? '';
+  const cari = (el('riwayat-cari')?.value ?? '').trim().replace(/\s+/g, ' ');
+  if (entitas) parameter.set('entitas', entitas);
+  if (cari) parameter.set('cari', cari);
+
+  let hasil;
+  try {
+    hasil = await ambil(`/tautan/supplier?${parameter}`);
+  } catch (galat) {
+    kotak.innerHTML = `<p class="kosong">${aman(galat.message)}</p>`;
+    return;
+  }
+
+  if ((hasil.data ?? []).length === 0) {
+    // Nihil hasil TIDAK pernah dinyatakan sebagai "belum dibayar" — sama
+    // seperti di pencarian transaksi. Yang kosong di sini adalah tautannya,
+    // bukan pembayarannya.
+    kotak.innerHTML =
+      '<p class="kosong">Belum ada transaksi yang ditautkan ke supplier pada filter ini. '
+      + 'Ini bukan berarti supplier belum dibayar — pembayarannya mungkin ada di rekening koran '
+      + 'tetapi belum dihubungkan ke supplier_id.</p>';
+    return;
+  }
+
+  kotak.innerHTML = hasil.data.map(kartuSupplier).join('');
+}
+
+export function pasangKendaliRiwayat() {
+  if (!el('panel-riwayat-supplier')) return;
+
+  el('riwayat-muat')?.addEventListener('click', muatRiwayatSupplier);
+  el('riwayat-cari')?.addEventListener('keydown', (ev) => {
+    if (ev.key === 'Enter') { ev.preventDefault(); muatRiwayatSupplier(); }
+  });
+  el('riwayat-entitas')?.addEventListener('change', muatRiwayatSupplier);
+
+  // Delegasi: kartunya digambar ulang setiap pemuatan.
+  document.addEventListener('click', (ev) => {
+    const tombol = ev.target.closest?.('.lihat-rincian');
+    if (!tombol) return;
+    muatRincian(tombol.closest('.kartu-supplier'));
+  });
+}
