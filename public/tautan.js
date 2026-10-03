@@ -121,8 +121,16 @@ function daftarKandidat(kandidat) {
     </button>`).join('')}</div>`;
 }
 
+// Bentuk canonical supplier_profiles.id milik alyssa-dev. Dicek juga di sini
+// supaya salah ketik ketahuan sebelum permintaan berangkat; yang benar-benar
+// menahan tetap server dan CHECK di database, karena layar bisa dilewati.
+const POLA_SUPPLIER_ID = /^[0-9a-f]{8}$/;
+
 async function simpanTautan() {
-  const supplierId = el('tautan-supplier-id').value.trim();
+  // Huruf besar diseragamkan, tidak ditolak: alyssa-dev membandingkan persis,
+  // tetapi 'A3F91B2C' dan 'a3f91b2c' tidak terlihat bedanya saat disalin dari
+  // layar sebelah.
+  const supplierId = el('tautan-supplier-id').value.trim().toLowerCase();
   const supplierNama = el('tautan-supplier-nama').value.trim();
   const rekening = el('tautan-rekening').value.trim();
   const pesan = el('tautan-pesan');
@@ -133,6 +141,18 @@ async function simpanTautan() {
     pesan.hidden = false;
     return;
   }
+
+  if (!POLA_SUPPLIER_ID.test(supplierId)) {
+    pesan.className = 'pesan gagal';
+    pesan.textContent = 'supplier_id harus tepat 8 digit heksadesimal dari Master Supplier '
+      + 'alyssa-dev, misalnya a3f91b2c. Salin dari kolom id, jangan diketik ulang.';
+    pesan.hidden = false;
+    return;
+  }
+
+  // Yang dikirim adalah bentuk yang sudah seragam, dan kotaknya ikut
+  // diperbarui supaya yang dilihat orang sama dengan yang tersimpan.
+  el('tautan-supplier-id').value = supplierId;
 
   const tombol = el('tautan-simpan');
   tombol.disabled = true;

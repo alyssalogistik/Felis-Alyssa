@@ -950,6 +950,37 @@ dari alyssa-dev, dipilih manusia, disimpan per transaksi fisik.
 mengusulkan supplier yang sama seperti kemarin. Ia tidak pernah mengikat
 sendiri.
 
+### Bentuk canonical `supplier_id`
+
+`supplier_profiles.id` milik alyssa-dev: **tepat delapan digit heksadesimal
+huruf kecil**, `^[0-9a-f]{8}$`, misalnya `a3f91b2c`. Felis tidak punya master
+supplier dan tidak pernah membuat id sendiri.
+
+alyssa-dev membandingkannya **persis**, jadi `A3F91B2C` gagal lookup walaupun
+menunjuk supplier yang sama. Karena itu ketikan huruf besar **diseragamkan ke
+huruf kecil sebelum disimpan, bukan ditolak**: bedanya tidak terlihat saat
+disalin dari layar sebelah, sehingga menolaknya hanya memindahkan masalah ke
+orang yang tidak bisa melihat sebabnya. Yang menyeragamkan `normalSupplierId()`
+di `src/integrasi/tautan.js`; yang memeriksa `supplierValid()`, dan ia
+**mengembalikan nilai yang sudah seragam** supaya pemanggil menyimpan yang itu,
+bukan yang diterimanya sendiri.
+
+Pagarnya ada di dua lapis. `0015` memasang CHECK pada `pemetaan_supplier`,
+`tautan_pembayaran`, dan `kewajiban_supplier` — di database, bukan cukup di
+aplikasi, dengan alasan yang sama seperti trigger di `0011`: aturan yang hanya
+hidup di kode akan hilang begitu ada satu jalur baru yang lupa memanggilnya, dan
+di sini "jalur baru" itu termasuk SQL Editor yang dipakai manusia.
+
+`tautan_pembayaran_riwayat` sengaja **tidak** dipagari. Ia catatan sejarah yang
+hanya bisa ditambah, dan `supplier_id_lama` di dalamnya merekam keadaan
+sebagaimana adanya pada saat itu.
+
+Salah ketik di sini tidak menimbulkan galat apa pun di Felis — ia baru ketahuan
+di alyssa-dev sebagai supplier yang tidak ada, sesudah uangnya benar-benar
+keluar. Lebih buruk lagi, `pemetaan_supplier` mengingat id yang pernah dipakai
+dan menyarankannya kembali untuk transaksi serupa berikutnya, sehingga satu
+salah ketik berkembang biak sendiri.
+
 **Konflik dihitung, tidak disimpan.** Dua supplier bernama sama adalah keadaan
 yang sah. `pemetaan_supplier_status` menghitung `konflik` saat dibaca; menyimpan
 nya sebagai kolom akan basi begitu salah satu pemetaan dihapus, dan tanda yang

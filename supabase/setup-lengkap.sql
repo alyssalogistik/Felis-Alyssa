@@ -1666,6 +1666,26 @@ left join kewajiban_supplier k
        on k.supplier_id = b.supplier_id and k.entitas = b.entitas;
 alter table kewajiban_supplier  enable row level security;
 alter table alokasi_pembayaran  enable row level security;
+--
+--
+--
+--
+do $pagar$
+begin
+  if not exists (select 1 from pg_constraint where conname = 'pemetaan_supplier_id_canonical') then
+    alter table pemetaan_supplier add constraint pemetaan_supplier_id_canonical
+      check (supplier_id ~ '^[0-9a-f]{8}$');
+  end if;
+  if not exists (select 1 from pg_constraint where conname = 'tautan_supplier_id_canonical') then
+    alter table tautan_pembayaran add constraint tautan_supplier_id_canonical
+      check (supplier_id ~ '^[0-9a-f]{8}$');
+  end if;
+  if not exists (select 1 from pg_constraint where conname = 'kewajiban_supplier_id_canonical') then
+    alter table kewajiban_supplier add constraint kewajiban_supplier_id_canonical
+      check (supplier_id ~ '^[0-9a-f]{8}$');
+  end if;
+end
+$pagar$;
 
 -- Setelah skema berubah, PostgREST masih memakai peta lama sampai diberi
 -- tahu. Tanpa ini tabel baru tetap dilaporkan "not found in the schema

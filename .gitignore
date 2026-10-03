@@ -10,3 +10,6 @@ node_modules/
 *.log
 npm-debug.log*
 .DS_Store
+
+# Hasil bangun-sebagian.js - tergantung database tujuan, jangan di-commit
+supabase/setup-sebagian.sql

@@ -507,8 +507,10 @@
 
       <div class="baris-formulir">
         <label>
-          supplier_id (dari alyssa-dev)
-          <input type="text" id="tautan-supplier-id" placeholder="mis. SUP-00123" autocomplete="off">
+          supplier_id (8 hex, dari Master Supplier alyssa-dev)
+          <input type="text" id="tautan-supplier-id" placeholder="mis. a3f91b2c"
+                 maxlength="8" minlength="8" pattern="[0-9a-fA-F]{8}" spellcheck="false"
+                 autocapitalize="off" autocorrect="off" autocomplete="off">
         </label>
         <label>
           Nama supplier (display)
