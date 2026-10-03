@@ -529,6 +529,37 @@
       <p class="pesan" id="tautan-pesan" hidden></p>
     </details>
 
+    <!-- Riwayat pembayaran per supplier, DIPISAH per PT dan CV.
+         Satu supplier boleh dibayar lewat beberapa transfer dengan nama
+         penerima yang berbeda; nama penerima bank ditampilkan apa adanya. -->
+    <details class="panel panel-riwayat" id="panel-riwayat-supplier">
+      <summary>Riwayat Pembayaran Supplier</summary>
+
+      <div class="baris-formulir">
+        <label>
+          Sumber Rekening
+          <select id="riwayat-entitas">
+            <option value="">Semua (tetap dipisah per perusahaan)</option>
+            <option value="PT_ALYSSA_AUTO_LOGISTIK">PT Alyssa Auto Logistik</option>
+            <option value="CV_ALYSSA_TRANS_UTAMA">CV Alyssa Trans Utama</option>
+          </select>
+        </label>
+        <label>
+          Cari supplier
+          <input type="search" id="riwayat-cari" placeholder="nama atau supplier_id" autocomplete="off">
+        </label>
+      </div>
+
+      <button type="button" id="riwayat-muat" class="tombol-lembut">Muat Riwayat</button>
+
+      <p class="keterangan-panel">
+        Totalnya dikelompokkan dari <b>supplier_id</b>, tidak pernah dari nama.
+        Nama penerima di rekening koran ditampilkan apa adanya sebagai bukti audit.
+      </p>
+
+      <div id="riwayat-isi"></div>
+    </details>
+
     <!-- Kop dokumen: tersembunyi di layar, muncul hanya saat halaman dicetak
          langsung dari peramban. Tombol Cetak sendiri mencetak PDF resmi. -->
     <div id="kop-cetak" class="kop-cetak" aria-hidden="true"></div>

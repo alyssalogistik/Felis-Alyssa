@@ -1034,6 +1034,64 @@ di karakter pertama yang berbeda, sehingga lama jawabannya membocorkan berapa
 karakter awal yang sudah benar. **`TOKEN_INTEGRASI` yang kosong berarti
 integrasinya MATI, bukan terbuka.**
 
+### Satu supplier, beberapa nama penerima
+
+Pekerjaan atas supplier MARTHEN RUTURAMBE bisa dibayar sebagian ke MARTHEN dan
+sebagian ke JAFAR TALI. Keduanya pembayaran yang sah untuk supplier administrasi
+yang sama.
+
+Ini **sudah didukung tanpa perubahan skema**: `tautan_pembayaran.transaksi_id`
+adalah primary key, sedangkan `supplier_id` tidak dibatasi unik. Jadi banyak
+transaksi boleh menunjuk satu `supplier_id`, dan tiap transaksi tetap memegang
+`transaksi_bank.id` serta nominalnya sendiri. Tidak ada penggabungan menjadi
+satu transaksi palsu.
+
+**Nama penerima bank bukan identitas supplier.** JAFAR TALI tidak pernah menjadi
+supplier hanya karena namanya muncul di keterangan — satu-satunya tempat
+`pemasok` dibuat otomatis adalah dari berkas tagihan yang diunggah, bukan dari
+narasi bank. `pemetaan_supplier` hanya menyimpan `supplier_id` yang diketik
+manusia.
+
+Dua `kunci_saran` berbeda yang menunjuk satu `supplier_id` **bukan konflik** —
+itu justru keadaan yang dirancang: satu supplier boleh punya beberapa jalur
+pembayaran.
+
+`penerimaBerbeda()` di `ringkas.js` menandai baris yang nama penerimanya tidak
+cocok dengan nama supplier. **Hanya menandai, tidak pernah menolak.** Ia memakai
+`kemiripanNama()` yang sama dengan mesin audit, bukan aturan kedua — dua aturan
+berbeda akan memberi tanda berbeda untuk baris yang sama di dua layar.
+
+### Riwayat dipisah per entitas, dikelompokkan dari supplier_id
+
+`riwayat_pembayaran_supplier` mengelompokkan `(supplier_id, entitas)`. PT dan CV
+membayar sebagian supplier yang sama dari rekening berbeda; menggabungkan
+totalnya membuat kewajiban satu perusahaan tampak terbayar oleh uang perusahaan
+lain, tanpa satu pun galat.
+
+Pengelompokannya **selalu dari `supplier_id`, tidak pernah dari nama.** Nama
+hanya potret. Kolom `jumlah_ejaan_nama` melaporkan berapa ejaan pernah dipakai
+untuk satu `supplier_id`: lebih dari satu berarti ada salah ketik. Totalnya
+tetap benar karena dikelompokkan dari id, tetapi salah ketik yang tidak pernah
+dilaporkan tidak akan pernah diperbaiki.
+
+### Kewajiban supplier opsional, dan kosong berarti TIDAK DIKETAHUI
+
+`kewajiban_supplier` ditetapkan manusia per `(supplier_id, entitas)`, dan boleh
+tidak ada. Nilainya sengaja **tidak** diturunkan dari `tagihan_pemasok` maupun
+dari PO: administrasi PO belum tertib, dan angka yang diturunkan dari sumber
+yang belum rapi menampilkan "sisa" yang salah tanpa gejala.
+
+Tanpa kewajiban, `sisa` adalah **null** dan statusnya `BELUM_DITETAPKAN` —
+bukan nol dan bukan LUNAS. Menebak "lunas" dari kewajiban yang tidak diketahui
+membuat orang berhenti membayar yang belum lunas; menebak "lebih bayar" membuat
+orang menagih balik uang yang memang haknya.
+
+`alokasi_pembayaran` menyimpan catatan pekerjaan/proyek sebagai teks bebas
+selama PO belum tertib. **Tidak satu pun total dihitung darinya** — ia
+keterangan audit, bukan penggerak angka, supaya catatan yang keliru tidak
+pernah bisa menggeser jumlah uang. Ia juga belum dikirim ke alyssa-dev:
+`alokasi` pada payload tetap `[]` sampai kontraknya ditambah secara sepakat.
+
 ### Batasan yang diketahui
 
 Satu transfer yang masuk dari dua cetakan BCA dengan kalimat berbeda
