@@ -186,7 +186,7 @@ export function layakDitarik(tautan) {
  * keluar sungguhan, nol yang memuatnya. alyssa-dev membaca rekening tujuan
  * dari masternya sendiri, dan dengan begitu tahu dari mana asalnya.
  */
-export function payloadPembayaran(tautan, transaksi, labelEntitas) {
+export function payloadPembayaran(tautan, transaksi, labelEntitas, alokasi = null) {
   return {
     idempotency_key: tautan.transaksi_id,
     bank_transaction_id: tautan.transaksi_id,
@@ -200,6 +200,11 @@ export function payloadPembayaran(tautan, transaksi, labelEntitas) {
     source_account_number: transaksi?.no_rekening ?? null,
 
     beneficiary_bank_code: kodeBankDari(transaksi?.keterangan),
+    // Nama penerima yang DITURUNKAN dari keterangan bank. Untuk ditampilkan
+    // saja — BCA tidak mencetak kolom nama penerima tersendiri, jadi ini hasil
+    // penguraian kalimat dan bisa meleset. Yang otoritatif tetap
+    // deskripsi_bank. JANGAN PERNAH dipakai sebagai identitas supplier.
+    beneficiary_name_raw: namaDariKeterangan(transaksi?.keterangan) ?? null,
     bank_account_number: null,
     bank_account_name: null,
 
@@ -208,6 +213,15 @@ export function payloadPembayaran(tautan, transaksi, labelEntitas) {
     deskripsi_bank: transaksi?.keterangan ?? null,
     referensi_bank: transaksi?.referensi ?? null,
 
-    alokasi: [],
+    // Alokasi pekerjaan/proyek bila auditor sudah mencatatnya. Selama
+    // administrasi PO belum tertib, bentuknya CATATAN berisi teks bebas;
+    // bentuk PO dan INVOICE memakai struktur yang sama persis sehingga
+    // menambahkannya nanti tidak mengubah daftar field.
+    //
+    // Satu transaksi hanya pernah menunjuk satu PO karena transaksi_id adalah
+    // primary key tautan, jadi larik ini berisi 0 atau 1 elemen.
+    alokasi: alokasi?.keterangan
+      ? [{ tipe: 'CATATAN', ref: alokasi.keterangan, nominal: Number(tautan.nominal) }]
+      : [],
   };
 }

@@ -541,16 +541,30 @@ api.get('/integrasi/siap-tarik', jalur(async (req, res) => {
     return res.json({ batch: randomUUID(), dibuat_pada: new Date().toISOString(), jumlah: 0, data: [] });
   }
 
+  const idTrx = tautan.map((t) => t.transaksi_id);
+
   const { data: trx, error: galatTrx } = await db
-    .from('transaksi_bank').select(KOLOM_TRX).in('id', tautan.map((t) => t.transaksi_id));
+    .from('transaksi_bank').select(KOLOM_TRX).in('id', idTrx);
   if (galatTrx) throw galatTrx;
   const petaTrx = new Map((trx ?? []).map((t) => [t.id, t]));
+
+  // Alokasi pekerjaan/proyek bila auditor sudah mencatatnya. Kegagalannya
+  // tidak menggagalkan penarikan: alokasi adalah keterangan, sedangkan yang
+  // dibawa payload ini uang. Larik kosong adalah keadaan yang sah menurut
+  // kontrak, jadi ketiadaannya tidak pernah menjadi galat di sisi penarik.
+  let petaAlokasi = new Map();
+  const { data: alokasi, error: galatAlokasi } = await db
+    .from('alokasi_pembayaran').select('transaksi_id, keterangan').in('transaksi_id', idTrx);
+  if (galatAlokasi) console.error('[integrasi] gagal membaca alokasi:', galatAlokasi.message);
+  else petaAlokasi = new Map((alokasi ?? []).map((a) => [a.transaksi_id, a]));
 
   res.json({
     batch: randomUUID(),
     dibuat_pada: new Date().toISOString(),
     jumlah: tautan.length,
-    data: tautan.map((t) => payloadPembayaran(t, petaTrx.get(t.transaksi_id), ENTITAS[t.entitas])),
+    data: tautan.map((t) => payloadPembayaran(
+      t, petaTrx.get(t.transaksi_id), ENTITAS[t.entitas], petaAlokasi.get(t.transaksi_id)
+    )),
   });
 }));
 
