@@ -83,7 +83,7 @@ test('keterangan atau nama kosong tidak menimbulkan tanda palsu', () => {
 
 test('nilai numeric dari database diubah menjadi angka, bukan teks', () => {
   const hasil = lengkapiRingkasan({
-    supplier_id: 'SUP-1', entitas: 'PT_ALYSSA_AUTO_LOGISTIK',
+    supplier_id: 'a3f91b2c', entitas: 'PT_ALYSSA_AUTO_LOGISTIK',
     supplier_nama: 'MARTHEN RUTURAMBE', jumlah_ejaan_nama: 1,
     jumlah_pembayaran: 2, total_dibayar: '5000000.00', kewajiban: '5000000.00',
   });
@@ -104,7 +104,7 @@ test('ejaan nama yang tidak seragam untuk satu supplier_id ditandai', () => {
 test('rincian meneruskan keterangan bank APA ADANYA', () => {
   const ket = 'BI-FAST DB TRANSFER KE 008 JAFAR TALI KBB';
   const hasil = lengkapiRincian(
-    { transaksi_id: 'id-1', supplier_id: 'SUP-1', supplier_nama: 'MARTHEN RUTURAMBE',
+    { transaksi_id: 'id-1', supplier_id: 'a3f91b2c', supplier_nama: 'MARTHEN RUTURAMBE',
       entitas: 'PT_ALYSSA_AUTO_LOGISTIK', tanggal: '2026-09-25', nominal: '2000000.00',
       status: 'siap', sidik: 'abc' },
     { keterangan: ket, no_rekening: '0072890271', referensi: null },

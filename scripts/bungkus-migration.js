@@ -80,4 +80,5 @@ export const URUTAN = [
   '0012_batas_percobaan_masuk.sql',
   '0013_integrasi_supplier.sql',
   '0014_riwayat_pembayaran_supplier.sql',
+  '0015_supplier_id_canonical.sql',
 ];

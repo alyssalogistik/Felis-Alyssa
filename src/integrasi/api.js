@@ -21,6 +21,7 @@ import { ENTITAS, kodeEntitas } from '../rekonsiliasi/entitas.js';
 import {
   STATUS, AKSI, SEBAB,
   kunciSaran, layakDitautkan, supplierValid, pilihSaran, layakDitarik, payloadPembayaran,
+  normalSupplierId, POLA_SUPPLIER_ID,
 } from './tautan.js';
 import { lengkapiRingkasan, lengkapiRincian } from './ringkas.js';
 
@@ -214,7 +215,7 @@ api.get('/tautan/supplier/:supplier_id', jalur(async (req, res) => {
 
   let q = db
     .from('tautan_pembayaran').select(KOLOM_TAUTAN)
-    .eq('supplier_id', req.params.supplier_id)
+    .eq('supplier_id', normalSupplierId(req.params.supplier_id))
     .neq('status', STATUS.DIBATALKAN);
   if (kode) q = q.eq('entitas', kode);
 
@@ -239,7 +240,7 @@ api.get('/tautan/supplier/:supplier_id', jalur(async (req, res) => {
   if (kode) {
     const { data: r, error: galatR } = await db
       .from('riwayat_pembayaran_supplier').select('*')
-      .eq('supplier_id', req.params.supplier_id).eq('entitas', kode).maybeSingle();
+      .eq('supplier_id', normalSupplierId(req.params.supplier_id)).eq('entitas', kode).maybeSingle();
     if (galatR) throw galatR;
     ringkasan = r ? lengkapiRingkasan(r) : null;
   }
@@ -260,6 +261,20 @@ api.get('/tautan/supplier/:supplier_id', jalur(async (req, res) => {
 api.put('/tautan/kewajiban/:supplier_id', jalur(async (req, res) => {
   const { entitas, nilai, catatan } = req.body ?? {};
 
+  // supplier_id datang dari URL, bukan dari body, jadi ia melewati
+  // supplierValid() yang menjaga kedua jalur lainnya. Diperiksa di sini
+  // dengan pola yang sama: tanpa ini, kewajiban bisa ditetapkan atas id yang
+  // tidak pernah ada di alyssa-dev, dan barisnya tidak akan pernah berpasangan
+  // dengan pembayaran mana pun — tampak sebagai supplier yang tidak pernah
+  // dibayar sepeser pun.
+  const supplierId = normalSupplierId(req.params.supplier_id);
+  if (!POLA_SUPPLIER_ID.test(supplierId)) {
+    return res.status(400).json({
+      pesan: 'supplier_id harus tepat 8 digit heksadesimal dari Master Supplier alyssa-dev.',
+      kode: SEBAB.SUPPLIER_TIDAK_CANONICAL,
+    });
+  }
+
   const kode = kodeEntitas(entitas);
   if (!kode) return res.status(400).json({ pesan: 'Entitas wajib disebut: PT atau CV.' });
 
@@ -271,7 +286,7 @@ api.put('/tautan/kewajiban/:supplier_id', jalur(async (req, res) => {
   const { data, error } = await db
     .from('kewajiban_supplier')
     .upsert({
-      supplier_id: String(req.params.supplier_id).trim(),
+      supplier_id: supplierId,
       entitas: kode,
       nilai: angka,
       catatan: catatan?.trim() || null,
@@ -351,8 +366,8 @@ api.post('/tautan', jalur(async (req, res) => {
 
   const baris = {
     transaksi_id: transaksi.id,
-    supplier_id: String(supplier_id).trim(),
-    supplier_nama: String(supplier_nama).trim(),
+    supplier_id: sah.supplier_id,
+    supplier_nama: sah.supplier_nama,
     entitas: transaksi.entitas,
     tanggal: transaksi.tanggal,
     nominal: transaksi.debit,
@@ -431,8 +446,8 @@ api.patch('/tautan/:transaksi_id', jalur(async (req, res) => {
   const { data, error } = await db
     .from('tautan_pembayaran')
     .update({
-      supplier_id: String(supplier_id).trim(),
-      supplier_nama: String(supplier_nama).trim(),
+      supplier_id: sah.supplier_id,
+      supplier_nama: sah.supplier_nama,
       status: statusBaru,
       alasan: alasan ?? null,
     })

@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import {
   STATUS, SEBAB,
   kodeBankDari, kunciSaran, layakDitautkan, supplierValid, pilihSaran, layakDitarik, payloadPembayaran,
+  normalSupplierId, POLA_SUPPLIER_ID,
 } from '../src/integrasi/tautan.js';
 
 // --- Kode bank -------------------------------------------------------------
@@ -84,10 +85,59 @@ test('tautan yang sudah dibatalkan tidak menghalangi pengikatan ulang', () => {
 // --- Supplier --------------------------------------------------------------
 
 test('supplier_id dan nama wajib keduanya', () => {
-  assert.equal(supplierValid({ supplier_id: 'SUP-1', supplier_nama: 'X' }).ok, true);
+  assert.equal(supplierValid({ supplier_id: 'a3f91b2c', supplier_nama: 'X' }).ok, true);
   assert.equal(supplierValid({ supplier_id: '', supplier_nama: 'X' }).ok, false);
-  assert.equal(supplierValid({ supplier_id: 'SUP-1', supplier_nama: '  ' }).ok, false);
+  assert.equal(supplierValid({ supplier_id: 'a3f91b2c', supplier_nama: '  ' }).ok, false);
   assert.equal(supplierValid({}).sebab, SEBAB.SUPPLIER_KOSONG);
+});
+
+test('supplier_id canonical: tepat 8 digit heksadesimal huruf kecil', () => {
+  const sah = supplierValid({ supplier_id: 'a3f91b2c', supplier_nama: 'X' });
+  assert.equal(sah.ok, true);
+  assert.equal(sah.supplier_id, 'a3f91b2c');
+  assert.equal(supplierValid({ supplier_id: '00000000', supplier_nama: 'X' }).ok, true);
+  assert.equal(supplierValid({ supplier_id: 'ffffffff', supplier_nama: 'X' }).ok, true);
+});
+
+test('huruf besar DISERAGAMKAN ke huruf kecil, bukan ditolak', () => {
+  // alyssa-dev membandingkan persis, jadi 'A3F91B2C' gagal lookup di sana.
+  // Tetapi bedanya tidak terlihat saat disalin dari layar sebelah, sehingga
+  // menolaknya hanya memindahkan masalah ke manusia yang tidak bisa melihat
+  // sebabnya. Yang disimpan selalu bentuk huruf kecilnya.
+  for (const ketikan of ['A3F91B2C', 'a3F91B2c', '  A3F91B2C  ']) {
+    const sah = supplierValid({ supplier_id: ketikan, supplier_nama: 'X' });
+    assert.equal(sah.ok, true, ketikan);
+    assert.equal(sah.supplier_id, 'a3f91b2c', ketikan);
+  }
+  assert.equal(normalSupplierId('  A3F91B2C '), 'a3f91b2c');
+  assert.equal(normalSupplierId(null), '');
+});
+
+test('panjang salah ditolak', () => {
+  for (const id of ['a3f91b2', 'a3f91b2cc', 'a', 'a3f91b2c0']) {
+    const hasil = supplierValid({ supplier_id: id, supplier_nama: 'X' });
+    assert.equal(hasil.ok, false, id);
+    assert.equal(hasil.sebab, SEBAB.SUPPLIER_TIDAK_CANONICAL, id);
+  }
+});
+
+test('bukan heksadesimal ditolak, termasuk format karangan', () => {
+  // 'SUP-00123' pernah tertulis sebagai contoh di placeholder UI dan di
+  // kontrak. Format itu tidak pernah ada di alyssa-dev; tes ini menahannya
+  // supaya tidak pernah kembali.
+  for (const id of ['SUP-00123', 'a3f91b2g', 'a3f91b2-', 'a3f9 1b2c', 'zzzzzzzz', '1234567g']) {
+    const hasil = supplierValid({ supplier_id: id, supplier_nama: 'X' });
+    assert.equal(hasil.ok, false, id);
+    assert.equal(hasil.sebab, SEBAB.SUPPLIER_TIDAK_CANONICAL, id);
+  }
+});
+
+test('pola canonical tidak menerima huruf besar sebagai bentuk SIMPAN', () => {
+  // Pemeriksaan terakhir sebelum menulis ke database memakai pola ini, dan
+  // CHECK di database memakai pola yang sama. Keduanya harus menolak huruf
+  // besar — penyeragaman terjadi SEBELUM sampai ke sini, bukan di sini.
+  assert.equal(POLA_SUPPLIER_ID.test('a3f91b2c'), true);
+  assert.equal(POLA_SUPPLIER_ID.test('A3F91B2C'), false);
 });
 
 // --- Saran dan konflik -----------------------------------------------------
@@ -99,8 +149,8 @@ test('tanpa pemetaan tidak ada saran', () => {
 });
 
 test('satu supplier menghasilkan saran', () => {
-  const hasil = pilihSaran([{ supplier_id: 'SUP-1', supplier_nama: 'A', status: 'aktif' }]);
-  assert.equal(hasil.saran.supplier_id, 'SUP-1');
+  const hasil = pilihSaran([{ supplier_id: 'a3f91b2c', supplier_nama: 'A', status: 'aktif' }]);
+  assert.equal(hasil.saran.supplier_id, 'a3f91b2c');
   assert.equal(hasil.konflik, false);
 });
 
@@ -108,7 +158,7 @@ test('DUA SUPPLIER NAMA SAMA: tidak ada yang dipilihkan, keduanya dilaporkan', (
   // Inilah keadaan yang seluruh desain ini jaga. Menebak salah satunya berarti
   // membayar supplier yang salah, dan itu tidak menimbulkan galat apa pun.
   const hasil = pilihSaran([
-    { supplier_id: 'SUP-1', supplier_nama: 'BUDI SANTOSO', status: 'aktif' },
+    { supplier_id: 'a3f91b2c', supplier_nama: 'BUDI SANTOSO', status: 'aktif' },
     { supplier_id: 'SUP-2', supplier_nama: 'BUDI SANTOSO', status: 'aktif' },
   ]);
   assert.equal(hasil.saran, null);
@@ -118,22 +168,22 @@ test('DUA SUPPLIER NAMA SAMA: tidak ada yang dipilihkan, keduanya dilaporkan', (
 
 test('pemetaan nonaktif tidak ikut menimbulkan konflik', () => {
   const hasil = pilihSaran([
-    { supplier_id: 'SUP-1', supplier_nama: 'BUDI', status: 'aktif' },
+    { supplier_id: 'a3f91b2c', supplier_nama: 'BUDI', status: 'aktif' },
     { supplier_id: 'SUP-2', supplier_nama: 'BUDI', status: 'nonaktif' },
   ]);
   assert.equal(hasil.konflik, false);
-  assert.equal(hasil.saran.supplier_id, 'SUP-1');
+  assert.equal(hasil.saran.supplier_id, 'a3f91b2c');
 });
 
 test('satu supplier dengan beberapa pemetaan tetap satu saran', () => {
   // Rule: satu supplier boleh punya banyak rekening/nama, semuanya mengarah
   // ke supplier_id yang sama.
   const hasil = pilihSaran([
-    { supplier_id: 'SUP-1', supplier_nama: 'BUDI', status: 'aktif' },
-    { supplier_id: 'SUP-1', supplier_nama: 'BUDI S', status: 'aktif' },
+    { supplier_id: 'a3f91b2c', supplier_nama: 'BUDI', status: 'aktif' },
+    { supplier_id: 'a3f91b2c', supplier_nama: 'BUDI S', status: 'aktif' },
   ]);
   assert.equal(hasil.konflik, false);
-  assert.equal(hasil.saran.supplier_id, 'SUP-1');
+  assert.equal(hasil.saran.supplier_id, 'a3f91b2c');
 });
 
 // --- Kelayakan ditarik -----------------------------------------------------
@@ -151,7 +201,7 @@ test('hanya status siap yang boleh ditarik', () => {
 
 const TAUTAN = {
   transaksi_id: '9b2e4f10-0000-4000-8000-000000000001',
-  supplier_id: 'SUP-00123',
+  supplier_id: 'a3f91b2c',
   supplier_nama: 'MARTHEN RUNTURAMBI',
   entitas: 'PT_ALYSSA_AUTO_LOGISTIK',
   tanggal: '2026-09-24',
@@ -164,6 +214,27 @@ const TRX = {
   no_rekening: '0072890271',
   referensi: null,
 };
+
+test('payload READY membawa supplier_id canonical apa adanya', () => {
+  const p = payloadPembayaran(TAUTAN, TRX, 'PT Alyssa Auto Logistik');
+  assert.equal(p.supplier_id, 'a3f91b2c');
+  assert.equal(POLA_SUPPLIER_ID.test(p.supplier_id), true);
+  // Tanpa prefix, tanpa perubahan huruf, tanpa pemangkasan: alyssa-dev
+  // melakukan lookup PERSIS atas nilai ini.
+  assert.equal(p.supplier_id, TAUTAN.supplier_id);
+});
+
+test('payload READY tidak pernah memakai nama sebagai identitas', () => {
+  const p = payloadPembayaran(
+    { ...TAUTAN, supplier_nama: 'MARTHEN RUNTURAMBI' }, TRX, 'PT Alyssa Auto Logistik');
+  // supplier_name boleh berubah ejaannya; yang mengikat tetap supplier_id.
+  const q = payloadPembayaran(
+    { ...TAUTAN, supplier_nama: 'MARTHEN R.' }, TRX, 'PT Alyssa Auto Logistik');
+  assert.equal(p.supplier_id, q.supplier_id);
+  assert.notEqual(p.supplier_name, q.supplier_name);
+  // Nama penerima hasil penguraian bank tidak pernah menjadi supplier_id.
+  assert.notEqual(p.beneficiary_name_raw, p.supplier_id);
+});
 
 test('idempotency_key selalu id transaksi fisik', () => {
   const p = payloadPembayaran(TAUTAN, TRX, 'PT Alyssa Auto Logistik');

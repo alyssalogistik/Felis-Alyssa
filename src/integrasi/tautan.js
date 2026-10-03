@@ -37,8 +37,36 @@ export const SEBAB = {
   SUDAH_DITARIK: 'sudah_ditarik',
   KEMBAR_SUDAH_DITAUT: 'kembar_sudah_ditaut',
   SUPPLIER_KOSONG: 'supplier_kosong',
+  SUPPLIER_TIDAK_CANONICAL: 'supplier_tidak_canonical',
   KONFLIK: 'konflik',
 };
+
+/**
+ * Bentuk canonical supplier_profiles.id milik alyssa-dev: tepat delapan digit
+ * heksadesimal huruf kecil.
+ *
+ * Dikunci di sini, bukan disebar ke setiap pemanggil, karena inilah satu-
+ * satunya hal yang membedakan supplier sungguhan dari ketikan manusia. Felis
+ * tidak punya master supplier dan tidak pernah membuat id sendiri; yang
+ * tersimpan harus benar-benar id yang ada di sana.
+ *
+ * alyssa-dev membandingkannya PERSIS, jadi 'A3F91B2C' gagal lookup walaupun
+ * menunjuk supplier yang sama. Karena itu ketikan diseragamkan ke huruf kecil
+ * sebelum disimpan, bukan ditolak: yang salah bukan niat orangnya, melainkan
+ * huruf besar yang tidak kelihatan bedanya di layar.
+ */
+export const POLA_SUPPLIER_ID = /^[0-9a-f]{8}$/;
+
+/**
+ * Bentuk seragam sebuah supplier_id, apa pun yang diketik.
+ *
+ * toLowerCase() tanpa locale, bukan toLocaleLowerCase(): di locale Turki
+ * 'I' menjadi 'ı' yang bukan heksadesimal, sehingga id sah akan tertolak di
+ * komputer yang kebetulan berbahasa itu.
+ */
+export function normalSupplierId(nilai) {
+  return String(nilai ?? '').trim().toLowerCase();
+}
 
 /**
  * Kode bank tujuan yang tercetak BCA, atau null.
@@ -120,7 +148,7 @@ export function layakDitautkan(transaksi, tautanYangAda = null) {
 
 /** Supplier yang disebut cukup jelas untuk disimpan? */
 export function supplierValid(supplier) {
-  const id = String(supplier?.supplier_id ?? '').trim();
+  const id = normalSupplierId(supplier?.supplier_id);
   const nama = String(supplier?.supplier_nama ?? '').trim();
   if (id === '' || nama === '') {
     return {
@@ -129,7 +157,20 @@ export function supplierValid(supplier) {
       pesan: 'supplier_id dan supplier_nama dari alyssa-dev wajib diisi.',
     };
   }
-  return { ok: true };
+  if (!POLA_SUPPLIER_ID.test(id)) {
+    return {
+      ok: false,
+      sebab: SEBAB.SUPPLIER_TIDAK_CANONICAL,
+      pesan: 'supplier_id harus tepat 8 digit heksadesimal dari Master Supplier '
+        + 'alyssa-dev, misalnya a3f91b2c. Salin dari kolom id, jangan diketik ulang '
+        + 'dan jangan dikarang sendiri.',
+    };
+  }
+  // Nilai yang sudah diseragamkan ikut dikembalikan supaya pemanggil menyimpan
+  // yang INI, bukan yang diterimanya sendiri. Memulangkan hanya {ok:true}
+  // membuat setiap pemanggil harus ingat menormalkan, dan yang lupa menyimpan
+  // huruf besar yang gagal lookup di alyssa-dev tanpa satu pun galat di sini.
+  return { ok: true, supplier_id: id, supplier_nama: nama };
 }
 
 /**
