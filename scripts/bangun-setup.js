@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// Menggabungkan supabase/migrations/*.sql menjadi SATU perintah SQL.
+// Menggabungkan SELURUH supabase/migrations/*.sql menjadi SATU perintah SQL.
 //
 // Alasannya bukan kerapian. SQL Editor Supabase menjalankan hanya teks yang
 // sedang tersorot bila ada seleksi aktif — di layar sentuh seleksi liar mudah
@@ -9,79 +9,22 @@
 // tidak ada sama sekali yang berubah — sorotan yang meleset gagal dengan
 // keras alih-alih diam-diam merusak.
 //
-// Sumber kebenaran tetap berkas migration. Berkas ini hanya membungkus.
+// Aturan pembungkusannya ada di bungkus-migration.js, dipakai bersama
+// bangun-sebagian.js. Sumber kebenaran tetap berkas migration.
 
-import { readFileSync, writeFileSync } from 'node:fs';
+import { writeFileSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { bungkus, URUTAN } from './bungkus-migration.js';
 
 const akar = join(dirname(fileURLToPath(import.meta.url)), '..');
-const urutan = [
-  '0001_skema_awal.sql',
-  '0002_otomatis_dan_keamanan.sql',
-  '0003_rekonsiliasi_bank.sql',
-  '0004_audit_pemasok.sql',
-  '0005_filter_tanggal_audit.sql',
-  '0006_sidik_transaksi.sql',
-  '0007_tampilan_tanpa_ganda.sql',
-  '0008_pembayaran_manual.sql',
-  '0009_entitas_rekening.sql',
-  '0010_audit_mekari.sql',
-  '0011_pengguna_dan_jejak.sql',
-  '0012_batas_percobaan_masuk.sql',
-  '0013_integrasi_supplier.sql',
-  '0014_riwayat_pembayaran_supplier.sql',
-];
 
-// Komentar dibuang supaya yang harus disalin lewat layar sentuh sependek
-// mungkin; penjelasannya tetap hidup di berkas migration aslinya.
-function ringkas(sql) {
-  return sql
-    .split('\n')
-    .map((baris) => baris.replace(/(^|\s)--\s.*$/, '$1').trimEnd())
-    .filter((baris) => baris.trim() !== '')
-    .join('\n');
-}
-
-// Badan fungsi memakai $$; di dalam blok DO tag itu akan menutup blok luar
-// terlalu cepat, jadi diberi tag sendiri.
-function tagUlang(sql) {
-  return sql.replace(/\$\$/g, '$fn$');
-}
-
-// Migration yang berdiri sendiri memanggil pg_notify lewat SELECT di akhirnya.
-// Di dalam blok DO, SELECT telanjang bukan perintah yang sah — plpgsql menuntut
-// PERFORM. Barisnya dibuang di sini karena berkas ini sudah memanggilnya sendiri
-// satu kali di akhir, sesudah seluruh migration dijalankan.
-function buangNotify(sql) {
-  return sql.replace(/^\s*select\s+pg_notify\([^;]*\);\s*$/gim, '');
-}
-
-const bagian = urutan.map((berkas) =>
-  tagUlang(ringkas(buangNotify(readFileSync(join(akar, 'supabase/migrations', berkas), 'utf8'))))
-);
-
-// Peringatan "destructive operations" di SQL Editor Supabase memindai teks
-// mentah, komentar ikut terbaca. Kalimat yang menyebutkan operasi berbahaya
-// untuk menyatakan bahwa operasi itu TIDAK ada justru memicu peringatannya
-// sendiri, jadi kepala berkas ini sengaja tidak menyebut kata-kata tersebut.
-const isi = `-- SETUP DATABASE ALYSSA AUTO LOGISTIK
--- Satu perintah. Salin seluruhnya, tempel, Run.
--- Hanya menambah tabel, fungsi, view, indeks, dan trigger baru.
--- Aman dijalankan berulang; data yang sudah ada tidak tersentuh.
-do $migrasi$
-begin
-${bagian.join('\n')}
-
--- Setelah skema berubah, PostgREST masih memakai peta lama sampai diberi
--- tahu. Tanpa ini tabel baru tetap dilaporkan "not found in the schema
--- cache" walaupun sudah ada.
-perform pg_notify('pgrst', 'reload schema');
-
-raise notice 'Setup Alyssa selesai. Tabel audit supplier siap dipakai.';
-end
-$migrasi$;
-`;
+const isi = bungkus({
+  akar,
+  urutan: URUTAN,
+  judul: 'SETUP DATABASE ALYSSA AUTO LOGISTIK',
+  selesai: 'Setup Alyssa selesai. Tabel audit supplier siap dipakai.',
+});
 
 writeFileSync(join(akar, 'supabase/setup-lengkap.sql'), isi);
 console.log(`setup-lengkap.sql: ${isi.split('\n').length} baris, ${isi.length} karakter`);
