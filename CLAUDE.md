@@ -1089,8 +1089,25 @@ orang menagih balik uang yang memang haknya.
 `alokasi_pembayaran` menyimpan catatan pekerjaan/proyek sebagai teks bebas
 selama PO belum tertib. **Tidak satu pun total dihitung darinya** — ia
 keterangan audit, bukan penggerak angka, supaya catatan yang keliru tidak
-pernah bisa menggeser jumlah uang. Ia juga belum dikirim ke alyssa-dev:
-`alokasi` pada payload tetap `[]` sampai kontraknya ditambah secara sepakat.
+pernah bisa menggeser jumlah uang.
+
+### Dua field payload yang mudah disalahpakai
+
+`beneficiary_name_raw` adalah nama penerima yang **diturunkan** dari keterangan
+bank oleh `namaDariKeterangan()`. BCA tidak mencetak kolom nama penerima
+tersendiri, jadi ini hasil penguraian kalimat dan bisa meleset — "MARTHEN KBB"
+untuk transfer ke MARTHEN. Disediakan supaya alyssa-dev tidak perlu menyusun
+aturan penguraian kedua yang akan menyimpang dari yang di sini. Yang otoritatif
+tetap `deskripsi_bank`, dan nama ini **tidak pernah boleh menjadi identitas
+supplier**.
+
+`alokasi` berisi 0 atau 1 elemen, tidak pernah lebih: `transaksi_id` adalah
+primary key tautan, jadi satu transaksi hanya pernah menunjuk satu pekerjaan.
+Bentuknya `{ tipe, ref, nominal }` dengan `tipe: 'CATATAN'` selama PO belum
+tertib; `PO` dan `INVOICE` memakai struktur yang sama persis sehingga
+menambahkannya nanti tidak mengubah daftar field. Larik kosong adalah keadaan
+normal — membuatnya `null` akan memaksa penarik memeriksa dua bentuk untuk hal
+yang sama.
 
 ### Batasan yang diketahui
 

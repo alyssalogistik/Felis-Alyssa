@@ -193,3 +193,42 @@ test('nominal dikirim sebagai angka, bukan teks dari database', () => {
   assert.equal(p.nominal, 3000000);
   assert.equal(typeof p.nominal, 'number');
 });
+
+test('nama penerima diturunkan dari keterangan, untuk ditampilkan saja', () => {
+  const p = payloadPembayaran(TAUTAN, TRX, 'PT Alyssa Auto Logistik');
+  assert.equal(p.beneficiary_name_raw, 'MARTHEN RUNTURAMBI KBB');
+  // Yang otoritatif tetap kalimat bank apa adanya.
+  assert.equal(p.deskripsi_bank, TRX.keterangan);
+});
+
+test('keterangan yang tidak bernama menghasilkan null, bukan teks kosong', () => {
+  const p = payloadPembayaran(TAUTAN, { keterangan: 'BIAYA ADM' }, 'PT');
+  assert.equal(p.beneficiary_name_raw, null);
+});
+
+test('tanpa alokasi, larik KOSONG — bukan null', () => {
+  // Kontrak menyatakan larik kosong adalah keadaan normal; null akan memaksa
+  // penarik memeriksa dua bentuk untuk hal yang sama.
+  const p = payloadPembayaran(TAUTAN, TRX, 'PT');
+  assert.deepEqual(p.alokasi, []);
+});
+
+test('alokasi manual masuk sebagai satu elemen CATATAN', () => {
+  const p = payloadPembayaran(TAUTAN, TRX, 'PT', { keterangan: 'Proyek 15 unit Surabaya-Kupang' });
+  assert.equal(p.alokasi.length, 1);
+  assert.deepEqual(p.alokasi[0], {
+    tipe: 'CATATAN', ref: 'Proyek 15 unit Surabaya-Kupang', nominal: 3000000,
+  });
+});
+
+test('alokasi tidak pernah lebih dari satu elemen', () => {
+  // transaksi_id adalah primary key tautan, jadi satu transaksi hanya pernah
+  // menunjuk satu PO. Bentuk larik dipertahankan untuk perluasan nanti.
+  const p = payloadPembayaran(TAUTAN, TRX, 'PT', { keterangan: 'apa pun' });
+  assert.ok(p.alokasi.length <= 1);
+});
+
+test('alokasi kosong atau hanya spasi tidak menghasilkan elemen', () => {
+  assert.deepEqual(payloadPembayaran(TAUTAN, TRX, 'PT', { keterangan: '' }).alokasi, []);
+  assert.deepEqual(payloadPembayaran(TAUTAN, TRX, 'PT', {}).alokasi, []);
+});
