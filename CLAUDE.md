@@ -521,6 +521,15 @@ Karena itu `/transaksi` dan `/cetak` menarik baris PEND **terpisah** lewat
 - **Nihil hasil bertanggal tetapi ada PEND tidak pernah disebut "tidak
   ditemukan".** Itu justru keadaan paling berbahaya: uangnya baru saja keluar.
 
+**Baris PEND di tabel utama diberi penanda, bukan dibiarkan kosong.** Ketika
+kriteria TIDAK menyaring tanggal, blok peringatan di atas sengaja kosong karena
+baris PEND sudah ikut di daftar utama. Akibat yang tidak terduga: barisnya duduk
+paling atas dengan kotak pilih kosong dan tidak ada satu kalimat pun di layar
+yang menerangkan sebabnya — yang terlihat cuma tombol yang hilang. Ditemukan
+dari pemakaian sungguhan. Karena itu kolom tanggalnya menuliskan **PEND**, kata
+yang dicetak BCA sendiri, dan ringkasannya menyebut berapa baris seperti itu
+beserta cara mengisinya.
+
 Saat mutasi berikutnya membukukan transaksi itu, `src/rekonsiliasi/pending.js`
 mencocokkannya dan **tanggal baris yang sudah ada yang diisi** — bukan baris baru
 yang ditambahkan. Sidik jarinya lalu menjadi sama persis dengan transaksi baru
