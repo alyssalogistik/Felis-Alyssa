@@ -199,6 +199,26 @@ export function pilihSaran(pemetaanCocok = []) {
  * yang satu memutuskan boleh mengalir keluar. Menggabungkannya membuat satu
  * perubahan aturan pengikatan diam-diam mengubah apa yang dikirim.
  */
+/**
+ * transaksi_id yang sedang TERPAKAI oleh sebuah tautan.
+ *
+ * Tautan berstatus 'dibatalkan' TIDAK menghitung: barisnya masih memegang
+ * kunci primernya, tetapi transaksinya kembali bebas dan boleh ditautkan lagi —
+ * aturan yang sama dipakai layakDitautkan(). Kalau yang dibatalkan ikut
+ * dianggap terpakai, transaksi yang sengaja dilepas tidak akan pernah muncul
+ * lagi sebagai pilihan, dan satu-satunya jalan memperbaikinya lewat SQL.
+ *
+ * @param {Array<{transaksi_id: string, status: string}>} daftar
+ * @returns {Set<string>}
+ */
+export function idTerpakai(daftar) {
+  return new Set(
+    (daftar ?? [])
+      .filter((t) => t?.transaksi_id && t.status !== STATUS.DIBATALKAN)
+      .map((t) => t.transaksi_id)
+  );
+}
+
 export function layakDitarik(tautan) {
   if (!tautan) return { ok: false, sebab: SEBAB.SUDAH_DITAUT, pesan: 'Belum ditautkan.' };
   if (tautan.status !== STATUS.SIAP) {

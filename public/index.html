@@ -494,6 +494,37 @@
       <p id="pesan-cetak" class="pesan" hidden></p>
     </div>
 
+    <!-- Transaksi yang masih bebas ditautkan. Ada supaya memilih transaksi
+         tidak menuntut SQL Editor: di tabel Audit, yang sudah tertaut hanya
+         terlihat dari lencana per baris, dan memeriksanya satu per satu di
+         atas ribuan transaksi tidak mungkin.
+
+         SENGAJA TANPA TOTAL UANG. Daftar ini disaring oleh keadaan tautan,
+         sedangkan ringkasan di bawah tidak tahu apa-apa soal tautan; menaruh
+         angka di sini akan membuat dua angka yang menggambarkan dua himpunan
+         berbeda berdampingan di satu layar. -->
+    <details class="panel" id="panel-siap-tautkan">
+      <summary>Transaksi Siap Ditautkan</summary>
+
+      <p class="keterangan-panel">
+        Transaksi <b>PT Alyssa Auto Logistik</b> yang sudah bertanggal dan
+        <b>belum pernah ditautkan</b> ke supplier mana pun. Centang satu, lalu
+        lanjutkan di panel <b>Hubungkan ke Supplier</b> di bawah.
+        Yang sudah ditautkan hilang sendiri dari daftar ini.
+      </p>
+
+      <div class="baris-formulir">
+        <label>
+          Cari penerima / keterangan
+          <input type="text" id="siap-cari" placeholder="mis. BAGUS" autocomplete="off">
+        </label>
+      </div>
+      <button type="button" id="siap-muat" class="tombol-lembut">Muat daftar</button>
+
+      <p class="pesan" id="siap-pesan" hidden></p>
+      <div id="siap-hasil"></div>
+    </details>
+
     <!-- Mengikat transaksi terpilih ke supplier di alyssa-dev.
          Nama supplier tidak pernah menjadi identitas: yang disimpan
          supplier_id dari alyssa-dev, dan manusia yang memilihnya. -->

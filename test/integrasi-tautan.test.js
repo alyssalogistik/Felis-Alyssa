@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import {
   STATUS, SEBAB,
   kodeBankDari, kunciSaran, layakDitautkan, supplierValid, pilihSaran, layakDitarik, payloadPembayaran,
-  normalSupplierId, POLA_SUPPLIER_ID,
+  normalSupplierId, POLA_SUPPLIER_ID, idTerpakai,
 } from '../src/integrasi/tautan.js';
 
 // --- Kode bank -------------------------------------------------------------
@@ -195,6 +195,53 @@ test('hanya status siap yang boleh ditarik', () => {
   assert.equal(layakDitarik({ ...dasar, status: STATUS.DIBATALKAN }).ok, false);
   assert.equal(layakDitarik({ ...dasar, status: STATUS.PERLU_KOREKSI_HILIR }).ok, false);
   assert.equal(layakDitarik(null).ok, false);
+});
+
+// --- Transaksi yang masih bebas ---------------------------------------------
+
+test('idTerpakai: tautan aktif menutup transaksinya', () => {
+  const t = idTerpakai([
+    { transaksi_id: 'a', status: STATUS.SIAP },
+    { transaksi_id: 'b', status: STATUS.DITARIK },
+    { transaksi_id: 'c', status: STATUS.PERLU_KOREKSI_HILIR },
+  ]);
+  assert.deepEqual([...t].sort(), ['a', 'b', 'c']);
+});
+
+test('idTerpakai: yang DIBATALKAN kembali bebas', () => {
+  // Barisnya masih memegang kunci primernya, tetapi transaksinya boleh
+  // ditautkan lagi — aturan yang sama dipakai layakDitautkan(). Kalau yang
+  // dibatalkan ikut dianggap terpakai, transaksi yang sengaja dilepas tidak
+  // akan pernah muncul lagi sebagai pilihan di panel.
+  const t = idTerpakai([
+    { transaksi_id: 'a', status: STATUS.DIBATALKAN },
+    { transaksi_id: 'b', status: STATUS.SIAP },
+  ]);
+  assert.equal(t.has('a'), false);
+  assert.equal(t.has('b'), true);
+});
+
+test('idTerpakai: masukan kosong atau cacat tidak melempar', () => {
+  assert.equal(idTerpakai([]).size, 0);
+  assert.equal(idTerpakai(null).size, 0);
+  assert.equal(idTerpakai(undefined).size, 0);
+  assert.equal(idTerpakai([{ status: STATUS.SIAP }]).size, 0);
+});
+
+test('idTerpakai sejalan dengan layakDitautkan', () => {
+  // Dua tempat memutuskan hal yang sama: panel memakai idTerpakai untuk
+  // MENYEMBUNYIKAN, server memakai layakDitautkan untuk MENOLAK. Kalau
+  // keduanya menyimpang, panel menawarkan baris yang kemudian ditolak 409 —
+  // atau lebih buruk, menyembunyikan baris yang sebenarnya masih boleh.
+  const transaksi = { debit: 1000, tanggal: '2026-10-01' };
+  for (const status of [STATUS.SIAP, STATUS.DITARIK, STATUS.PERLU_KOREKSI_HILIR]) {
+    const tautan = { transaksi_id: 'x', status };
+    assert.equal(idTerpakai([tautan]).has('x'), true, status);
+    assert.equal(layakDitautkan(transaksi, tautan).ok, false, status);
+  }
+  const dibatalkan = { transaksi_id: 'x', status: STATUS.DIBATALKAN };
+  assert.equal(idTerpakai([dibatalkan]).has('x'), false);
+  assert.equal(layakDitautkan(transaksi, dibatalkan).ok, true);
 });
 
 // --- Payload ---------------------------------------------------------------
