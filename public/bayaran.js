@@ -172,6 +172,16 @@ function tampilPending(pending) {
       <b>tidak ikut tersaring periode</b> dan tidak masuk total di bawah.
       Biasanya ini pergerakan paling baru di rekening.
     </p>
+    <p class="keterangan-panel">
+      Baris di sini <b>belum bisa dihubungkan ke supplier</b> &mdash; karena itu
+      tidak ada kotak pilihnya. Pembayaran yang dikirim ke alyssa-dev wajib
+      bertanggal; tanggal karangan akan merusak riwayat pembayaran di sana tanpa
+      menimbulkan galat apa pun, dan baru ketahuan saat angkanya dipakai.
+      Begitu BCA membukukannya, unggah cetakan Mutasi terbaru di
+      <a href="#/rekonsiliasi">Rekon Bank</a> &mdash; tanggal baris ini akan terisi
+      sendiri, bukan menambah baris baru, lalu barisnya pindah ke tabel di bawah
+      lengkap dengan kotak pilihnya.
+    </p>
     <div class="ringkas">
       <div class="r-debit"><b>${aman(rupiah.format(keluar))}</b><small>Uang keluar belum dibukukan</small></div>
       ${masuk > 0 ? `<div class="r-kredit"><b>${aman(rupiah.format(masuk))}</b><small>Uang masuk belum dibukukan</small></div>` : ''}

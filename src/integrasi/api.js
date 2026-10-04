@@ -18,9 +18,11 @@ import { Router } from 'express';
 import { randomUUID } from 'node:crypto';
 import { createAdminClient } from '../supabase.js';
 import { ENTITAS, kodeEntitas } from '../rekonsiliasi/entitas.js';
+import { namaDariKeterangan } from '../rekonsiliasi/nama.js';
 import {
   STATUS, AKSI, SEBAB,
   kunciSaran, layakDitautkan, supplierValid, pilihSaran, layakDitarik, payloadPembayaran,
+  idTerpakai,
   normalSupplierId, POLA_SUPPLIER_ID,
 } from './tautan.js';
 import { lengkapiRingkasan, lengkapiRincian } from './ringkas.js';
@@ -163,6 +165,82 @@ api.get('/tautan', jalur(async (req, res) => {
 }));
 
 /** Pemetaan yang tersimpan, beserta tanda konfliknya. */
+/**
+ * Transaksi bank yang MASIH BEBAS ditautkan ke supplier.
+ *
+ * Ada supaya memilih transaksi tidak menuntut SQL Editor. Sebelum panel ini,
+ * satu-satunya cara menemukan transaksi yang belum tertaut adalah memeriksa
+ * lencana Supplier baris demi baris di tabel Audit — tidak mungkin di atas
+ * ribuan transaksi, sehingga pemakainya terdorong ke SQL. Alat yang menuntut
+ * SQL untuk dipakai belum selesai dibuat.
+ *
+ * SENGAJA TANPA RINGKASAN UANG. Daftar ini disaring oleh keadaan tautan,
+ * sedangkan ringkasan_transaksi_bank() tidak tahu apa-apa soal tautan. Kalau
+ * panel ini menampilkan total, angkanya akan menggambarkan himpunan yang
+ * berbeda dari baris yang terlihat — dan di halaman yang dipakai memutuskan
+ * pembayaran, kekeliruan seperti itu hanya berpindah tempat, tidak hilang.
+ * Totalnya tetap milik tabel Audit di bawahnya.
+ *
+ * Dibaca dari TABEL transaksi_bank, bukan view transaksi_bank_unik: yang
+ * ditautkan adalah baris fisik, dan idempotency di alyssa-dev dikunci pada
+ * id fisik itu.
+ */
+api.get('/tautan/siap-tautkan', jalur(async (req, res) => {
+  // CV hanya histori; operasional baru di PT. Entitas tetap boleh disebut
+  // eksplisit supaya endpoint ini tidak mengunci kebijakan itu ke dalam kode.
+  const kode = req.query.entitas
+    ? kodeEntitas(req.query.entitas)
+    : 'PT_ALYSSA_AUTO_LOGISTIK';
+  if (!kode) return res.status(400).json({ pesan: 'Entitas tidak dikenali.' });
+
+  const batas = Math.min(Math.max(Number(req.query.batas) || 50, 1), 200);
+
+  // Tautan dibaca lebih dulu dan seluruhnya: tabelnya kecil, dan
+  // menyaringnya di sini jauh lebih jujur daripada menyaring di peramban
+  // sesudah barisnya tergambar.
+  const { data: tautan, error: galatTautan } = await db
+    .from('tautan_pembayaran').select('transaksi_id, status');
+  if (galatTautan) throw galatTautan;
+  const terpakai = idTerpakai(tautan);
+
+  let q = db
+    .from('transaksi_bank')
+    .select(KOLOM_TRX)
+    .eq('entitas', kode)
+    .gt('debit', 0)
+    .not('tanggal', 'is', null)
+    .order('tanggal', { ascending: false })
+    .limit(batas + terpakai.size);
+
+  if (req.query.cari) {
+    const kata = String(req.query.cari).trim().replace(/\s+/g, ' ');
+    if (kata !== '') q = q.ilike('keterangan', `%${kata}%`);
+  }
+
+  const { data, error } = await q;
+  if (error) throw error;
+
+  // Yang sudah tertaut dibuang SESUDAH diambil, lalu dipotong ke batas.
+  // Batasnya dinaikkan sebanyak tautan yang ada supaya pembuangan ini tidak
+  // membuat halamannya tampak lebih pendek daripada yang diminta.
+  const bebas = (data ?? []).filter((t) => !terpakai.has(t.id)).slice(0, batas);
+
+  res.json({
+    entitas: kode,
+    entitas_label: ENTITAS[kode] ?? kode,
+    jumlah: bebas.length,
+    tercapai_batas: bebas.length === batas,
+    data: bebas.map((t) => ({
+      bank_transaction_id: t.id,
+      tanggal: t.tanggal,
+      keterangan: t.keterangan,
+      nominal: Number(t.debit),
+      referensi: t.referensi,
+      penerima: namaDariKeterangan(t.keterangan) ?? null,
+    })),
+  });
+}));
+
 api.get('/tautan/pemetaan', jalur(async (req, res) => {
   const { data, error } = await db
     .from('pemetaan_supplier_status').select('*').order('dibuat_pada', { ascending: false }).limit(2000);

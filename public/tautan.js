@@ -190,6 +190,11 @@ async function simpanTautan() {
   await gambarLencana();
   await muatSaran();
   await muatRingkasanSiap();
+  // Panel "Siap Ditautkan" disegarkan supaya baris yang baru saja tertaut
+  // hilang dari daftar yang masih bebas. Tanpa ini, baris yang sudah terikat
+  // tetap tampak sebagai pilihan dan percobaan kedua ditolak 409 tanpa sebab
+  // yang terlihat di layar.
+  if (berhasil.length > 0 && el('panel-siap-tautkan')) await muatSiapTautkan();
   tombol.disabled = terpilih.size === 0;
 }
 
@@ -393,5 +398,107 @@ export function pasangKendaliRiwayat() {
     const tombol = ev.target.closest?.('.lihat-rincian');
     if (!tombol) return;
     muatRincian(tombol.closest('.kartu-supplier'));
+  });
+}
+
+
+// ---------------------------------------------------------------------------
+// Panel "Transaksi Siap Ditautkan"
+//
+// Daftar transaksi yang MASIH BEBAS. Barisnya memakai kelas `.pilih-transaksi`
+// yang sama dengan tabel Audit, sehingga pendengar pemilihan yang sudah ada
+// langsung menanganinya — tidak ada jalur pemilihan kedua yang bisa menyimpang
+// dari yang pertama.
+// ---------------------------------------------------------------------------
+
+/** Nomor giliran, supaya pemuatan lama tidak menimpa hasil pemuatan baru. */
+let giliranSiap = 0;
+
+function barisSiap(t) {
+  return `
+    <tr>
+      <td class="pilih-kolom">
+        <input type="checkbox" class="pilih-transaksi" value="${aman(t.bank_transaction_id)}"
+               aria-label="Pilih transaksi ${aman(t.tanggal ?? '')}">
+      </td>
+      <td>${aman(t.tanggal ?? '')}</td>
+      <td>${t.penerima ? aman(t.penerima) : '<span class="nol">-</span>'}</td>
+      <td class="keterangan-sel">${aman(t.keterangan ?? '')}</td>
+      <td class="angka-kolom keluar">${aman(rupiah.format(Number(t.nominal ?? 0)))}</td>
+      <td class="keterangan-sel"><code>${aman(t.bank_transaction_id)}</code></td>
+    </tr>`;
+}
+
+export async function muatSiapTautkan() {
+  const kotak = el('siap-hasil');
+  const pesan = el('siap-pesan');
+  if (!kotak) return;
+
+  const giliran = ++giliranSiap;
+  const kata = el('siap-cari')?.value.trim().replace(/\s+/g, ' ') ?? '';
+
+  pesan.className = 'pesan';
+  pesan.textContent = 'Memuat…';
+  pesan.hidden = false;
+
+  let hasil;
+  try {
+    const parameter = new URLSearchParams({ batas: '50' });
+    if (kata !== '') parameter.set('cari', kata);
+    hasil = await ambil(`/tautan/siap-tautkan?${parameter}`);
+  } catch (galat) {
+    if (giliran !== giliranSiap) return;
+    pesan.className = 'pesan gagal';
+    pesan.textContent = galat.message;
+    return;
+  }
+  if (giliran !== giliranSiap) return;
+
+  pesan.hidden = true;
+
+  if (hasil.jumlah === 0) {
+    // Nihil di sini TIDAK berarti semua sudah dibayar atau sudah tertaut —
+    // bisa juga transaksinya belum bertanggal (PEND) atau kata kuncinya tidak
+    // cocok. Menyebutnya "semua sudah ditautkan" akan menyesatkan.
+    kotak.innerHTML = kata === ''
+      ? '<p class="kosong">Tidak ada transaksi PT yang bertanggal dan masih bebas ditautkan. '
+        + 'Transaksi yang belum dibukukan BCA (PEND) tidak ikut di sini — unggah mutasi '
+        + 'terbaru di <a href="#/rekonsiliasi">Rekon Bank</a> supaya tanggalnya terisi.</p>'
+      : `<p class="kosong">Tidak ada transaksi bebas yang cocok dengan "${aman(kata)}". `
+        + 'Coba kata kunci lain, atau nama penerima di rekening koran mungkin berbeda '
+        + 'dari nama resmi suppliernya.</p>';
+    return;
+  }
+
+  kotak.innerHTML = `
+    <p class="keterangan-panel">
+      ${hasil.jumlah} transaksi bebas${hasil.tercapai_batas ? ' (dibatasi 50 teratas, persempit dengan kata kunci)' : ''}
+      &mdash; ${aman(hasil.entitas_label)}
+    </p>
+    <table class="tabel">
+      <thead>
+        <tr>
+          <th class="pilih-kolom"><span class="sr-only">Pilih</span></th>
+          <th>Tanggal</th>
+          <th>Penerima (dari keterangan)</th>
+          <th>Keterangan Transaksi</th>
+          <th class="angka-kolom">Nominal</th>
+          <th>bank_transaction_id</th>
+        </tr>
+      </thead>
+      <tbody>${hasil.data.map(barisSiap).join('')}</tbody>
+    </table>`;
+
+  // Pilihan yang menunjuk baris yang sudah tidak ada dibuang, dan yang masih
+  // ada dikembalikan centangnya — persis perlakuan tabel Audit.
+  document.dispatchEvent(new CustomEvent('bayaran-digambar'));
+}
+
+export function pasangKendaliSiapTautkan() {
+  if (!el('panel-siap-tautkan')) return;
+
+  el('siap-muat')?.addEventListener('click', muatSiapTautkan);
+  el('siap-cari')?.addEventListener('keydown', (ev) => {
+    if (ev.key === 'Enter') { ev.preventDefault(); muatSiapTautkan(); }
   });
 }
