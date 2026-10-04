@@ -1065,6 +1065,72 @@ di karakter pertama yang berbeda, sehingga lama jawabannya membocorkan berapa
 karakter awal yang sudah benar. **`TOKEN_INTEGRASI` yang kosong berarti
 integrasinya MATI, bukan terbuka.**
 
+### Ingatan pemetaan mencocokkan NAMA, bukan `kunci_saran`
+
+Formulir "Hubungkan ke Supplier" terisi sendiri dari pemetaan yang sudah pernah
+disimpan. Yang memutuskan `src/integrasi/cocok-nama.js` — murni, dipakai server
+maupun peramban, dan disajikan di `/cocok-nama.js` alih-alih disalin ke
+`public/`, dengan alasan yang sama seperti `entitas.js`.
+
+**`kunci_saran` tidak bisa dipakai untuk ini.** Kuncinya disusun dari
+`namaDariKeterangan()`, dan nama turunan itu ikut menyerap kata di depan nama.
+Diukur pada tujuh keterangan BAGUS HARDIANTO sungguhan dari satu rekening PT,
+kuncinya pecah menjadi **enam**: `BAGUS HARDIANTO|`, `HIACE BAGUS HARDIANTO|`,
+`BOX IKT BAGUS HARDIANTO|`, `TRINTON BAGUS HARDIANTO|`, `ER TIGA BAGUS
+HARDIANTO|`, dan `BAGUS HARDIANTO KBB|002`. Ingatan yang dikunci padanya hampir
+tidak pernah berbunyi — yang dipetakan kemarin lewat satu kalimat tidak dikenali
+besok saat banknya mencetak kalimat yang lain.
+
+Yang dicocokkan sebaliknya: **nama supplier yang DIKETIK manusia**, dicari
+sebagai kata utuh di dalam keterangan bank. Nama itu tidak ikut berubah
+mengikuti kalimat banknya, jadi ketujuh keterangan di atas cocok semua.
+
+Kedua jalur tetap dipakai dan hasilnya **disatukan**, bukan dipilih salah satu.
+Kalau dua nama supplier yang berbeda sama-sama muncul utuh di satu keterangan,
+itu memang ambigu, dan `pilihSaran()` menjawabnya dengan konflik — tidak
+memilihkan apa pun.
+
+Empat hal yang tidak boleh dilepas:
+
+- **Nama berkata tunggal tidak pernah dipakai mencocokkan.** "BUDI" akan ikut
+  cocok pada "BUDI SANTOSO" maupun "BUDI HARTONO" — dua orang yang berbeda, dan
+  uangnya tercatat atas nama yang bukan penerimanya. Aturan yang sama sudah
+  dipakai pelipatan nama di `nama.js`.
+- **Batasnya batas kata, bukan substring mentah.** Tanpa itu "BAGUS HARDIANTO"
+  ikut cocok pada "BAGUS HARDIANTOS".
+- **Pemetaan dibatasi pada entitas transaksinya.** PT dan CV membayar sebagian
+  supplier yang sama dari rekening yang berbeda; ingatan yang menyeberang akan
+  mengisi formulir PT dengan rekening tujuan yang pernah dipakai CV, dan
+  salahnya tidak menimbulkan galat apa pun.
+- **Nomor rekening diambil dari pemetaan terbaru yang PUNYA**, bukan dari baris
+  wakilnya saja. Kolom itu opsional, jadi pengikatan terakhir bisa dilakukan
+  tanpa mengisinya — dan nomor yang pernah diketik hilang justru pada supplier
+  yang paling sering dibayar.
+
+**Terisi bukan tersimpan.** Yang berpindah hanya isi kotak; tombol Simpan Tautan
+tetap harus ditekan manusia, dan `supplier_id`-nya terlihat di layar sebelum
+itu. Nama boleh menyarankan; yang mengikat tetap id yang dilihat dan disetujui
+orangnya.
+
+**Yang DIKETIK manusia tidak pernah ditimpa.** Penandanya `diisiOtomatis` di
+`public/tautan.js`: isian yang berasal dari pengisian otomatis boleh diganti
+saat pindah transaksi, yang berasal dari ketikan tidak. Tanpa itu, orang yang
+sedang menyalin `supplier_id` dari layar sebelah lalu mencentang baris
+berikutnya akan melihat ketikannya lenyap — dan yang tersimpan menjadi supplier
+yang tidak pernah dipilihnya.
+
+Kotak nama juga memunculkan daftar supplier yang pernah ditautkan setelah dua
+huruf diketik. Aturannya sengaja **jauh lebih longgar** daripada pengisian
+otomatis: di situ manusia melihat daftarnya dan memilih sendiri, jadi salah
+tebak tidak bisa lolos tanpa dilihat. Yang ketat adalah yang mengisi formulir
+sendiri. Daftar itu memuat **nama perusahaannya** bila belum ada transaksi yang
+dipilih — tanpa itu dua `supplier_id` berbeda tampil dengan nama yang sama
+persis dan tidak ada apa pun di layar yang membedakannya.
+
+Daftarnya ingatan, **bukan master supplier**. Felis tidak punya master supplier
+dan tidak pernah membuat id sendiri; yang muncul hanya supplier yang sudah
+pernah ditautkan manusia dari halaman ini.
+
 ### Satu supplier, beberapa nama penerima
 
 Pekerjaan atas supplier MARTHEN RUTURAMBE bisa dibayar sebagian ke MARTHEN dan
