@@ -511,11 +511,28 @@ async function simpanPdf() {
     tautan.click();
     tautan.remove();
 
-    if (giliran === giliranAktif) {
+    // Pengosongan DILEWATI bila ada transaksi yang sedang tercentang.
+    //
+    // Halaman ini sekarang bukan hanya untuk mencari dan mencetak: transaksi
+    // yang tercentang adalah pekerjaan yang sedang berjalan menuju pengikatan
+    // ke supplier. Mengosongkan tabel di tengahnya membuang pilihan itu
+    // bersama barisnya, dan orangnya harus mencari ulang dari awal hanya
+    // karena menyimpan laporan.
+    //
+    // Alasan asli pengosongan tetap berlaku untuk pencetakan biasa: laporan
+    // dibuat server atas SELURUH transaksi yang cocok filter, sedangkan tabel
+    // di layar hanya memuat sebagian — tabel setengah yang tertinggal mudah
+    // disangka sama dengan isi PDF-nya.
+    const dipilih = document.querySelectorAll('.pilih-transaksi:checked').length;
+
+    if (giliran !== giliranAktif) {
+      pesanCetak('berhasil', 'PDF berhasil disimpan. Hasil di layar dibiarkan karena sudah berganti pencarian.');
+    } else if (dipilih > 0) {
+      pesanCetak('berhasil', `PDF berhasil disimpan. Hasil di layar dibiarkan karena ${dipilih} transaksi `
+        + 'masih dipilih untuk dihubungkan ke supplier.');
+    } else {
       kosongkanHasil();
       pesanCetak('berhasil', 'PDF berhasil disimpan. Hasil transaksi telah dikosongkan.');
-    } else {
-      pesanCetak('berhasil', 'PDF berhasil disimpan. Hasil di layar dibiarkan karena sudah berganti pencarian.');
     }
   } catch (error) {
     // Gagal menyimpan berarti hasil di layar dibiarkan apa adanya.
