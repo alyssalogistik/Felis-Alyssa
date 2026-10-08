@@ -66,8 +66,32 @@ if (kurang.length > 0) {
         : `Supabase project: ${sasaran.ref ?? 'tidak dikenali'} ` +
           '(SUPABASE_PROJECT_REF belum diisi, sasaran tidak dikunci)'
     );
-    const { default: api } = await import('./api.js');
-    app.use('/api', api);
+    // Pemuatan API dibungkus, dan ini pelajaran dari production yang mati.
+    //
+    // Modul di bawah /api membuat client Supabase saat dimuat. Kalau
+    // pembuatannya melempar — misalnya pustakanya menuntut sesuatu yang tidak
+    // disediakan Node versi itu — galatnya terjadi di tengah evaluasi modul
+    // ESM, di luar jangkauan penangan galat Express di bawah, dan PROSESNYA
+    // MATI. Railway menandainya CRASHED, seluruh halaman ikut tidak bisa
+    // dibuka, dan sebabnya hanya terbaca kalau orang membuka log.
+    //
+    // Dibungkus begini, kegagalan apa pun di jalur itu diperlakukan sama
+    // seperti kredensial yang belum diisi dan sasaran project yang salah:
+    // server tetap menyala, /healthz tetap menjawab, dan /api menjawab 503
+    // beserta sebabnya. Yang rusak tinggal bagian yang memang rusak.
+    try {
+      const { default: api } = await import('./api.js');
+      app.use('/api', api);
+    } catch (galat) {
+      console.error('\nGAGAL MEMUAT API:', galat.message, '\n');
+      console.error(galat);
+      app.use('/api', (_req, res) =>
+        res.status(503).json({
+          pesan: 'API gagal dimuat di server. Periksa log deployment.',
+          rincian: galat.message,
+        })
+      );
+    }
   }
 }
 
