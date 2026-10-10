@@ -10,6 +10,12 @@
 // tidak boleh.
 
 import { ambil, el, aman, rupiah } from './bantuan.js';
+import { cariPemetaan, PANJANG_KETIK_MINIMAL } from '/cocok-nama.js';
+
+const LABEL_ENTITAS = {
+  PT_ALYSSA_AUTO_LOGISTIK: 'PT Alyssa Auto Logistik',
+  CV_ALYSSA_TRANS_UTAMA: 'CV Alyssa Trans Utama',
+};
 
 const LENCANA = {
   siap: ['siap', 'Siap ditarik alyssa-dev'],
@@ -19,6 +25,23 @@ const LENCANA = {
 };
 
 let terpilih = new Set();
+
+// Entitas transaksi yang sedang dipilih. Dipakai menyaring ingatan supplier:
+// PT dan CV membayar sebagian supplier yang sama dari rekening yang berbeda,
+// jadi ingatan yang menyeberang akan mengisi rekening tujuan perusahaan lain.
+let entitasAktif = null;
+
+// Isian supplier di formulir berasal dari pengisian otomatis, bukan ketikan?
+//
+// Inilah yang memisahkan "boleh ditimpa" dari "jangan disentuh". Yang DIKETIK
+// manusia tidak pernah ditimpa oleh saran — orang yang sedang menyalin
+// supplier_id dari layar sebelah lalu mencentang baris berikutnya akan melihat
+// ketikannya lenyap, dan yang tersimpan menjadi supplier yang tidak pernah
+// dipilihnya.
+let diisiOtomatis = false;
+
+/** Ingatan pemetaan untuk kotak ketik-cari. Ditarik sekali, lalu disaring di layar. */
+let cachePemetaan = null;
 
 const kotakPilih = () => [...document.querySelectorAll('.pilih-transaksi')];
 
@@ -63,9 +86,10 @@ async function muatSaran() {
   if (!kotak) return;
 
   if (terpilih.size !== 1) {
+    entitasAktif = null;
     kotak.innerHTML = terpilih.size === 0
       ? ''
-      : '<p class="keterangan-panel">Saran otomatis hanya muncul bila satu transaksi dipilih. '
+      : '<p class="keterangan-panel">Pengisian otomatis hanya berjalan bila satu transaksi dipilih. '
         + 'Beberapa transaksi sekaligus tetap bisa ditautkan ke supplier yang sama.</p>';
     return;
   }
@@ -78,6 +102,8 @@ async function muatSaran() {
     kotak.innerHTML = `<p class="kosong">${aman(galat.message)}</p>`;
     return;
   }
+
+  entitasAktif = hasil.transaksi?.entitas ?? null;
 
   if (!hasil.kelayakan?.ok) {
     kotak.innerHTML = `<p class="kosong">${aman(hasil.kelayakan?.pesan ?? 'Tidak bisa ditautkan.')}</p>`;
@@ -103,22 +129,146 @@ async function muatSaran() {
   }
 
   if (hasil.saran) {
+    const terisi = isiOtomatis(hasil.saran);
     kotak.innerHTML = `
-      <p class="keterangan-panel">Saran dari pemetaan sebelumnya:</p>
+      <p class="keterangan-panel">${terisi
+        ? '✓ Terisi otomatis dari pemetaan yang pernah Anda simpan. '
+          + '<b>Belum ada yang tersimpan</b> &mdash; periksa supplier_id-nya, lalu tekan Simpan Tautan.'
+        : 'Pernah dipetakan ke supplier ini. Isian di bawah tidak diubah karena sudah Anda ketik sendiri; '
+          + 'tekan tombolnya kalau ingin memakai yang ini.'}</p>
       ${daftarKandidat([hasil.saran])}`;
     return;
   }
 
   kotak.innerHTML =
-    '<p class="keterangan-panel">Belum pernah dipetakan. Isi supplier_id dan nama dari alyssa-dev di bawah.</p>';
+    '<p class="keterangan-panel">Belum pernah dipetakan. Isi supplier_id dan nama dari alyssa-dev di bawah '
+    + '&mdash; setelah tersimpan sekali, transaksi berikutnya atas nama yang sama akan terisi sendiri.</p>';
 }
 
-function daftarKandidat(kandidat) {
+/**
+ * Menaruh satu kandidat ke formulir. SATU-SATUNYA tempat ketiga kotak itu
+ * diisi dari pemetaan, baik oleh pengisian otomatis maupun oleh klik manusia.
+ *
+ * Nomor rekening hanya ditimpa bila pemetaannya benar-benar punya. Pemetaan
+ * tanpa nomor rekening berarti "tidak diketahui", bukan "kosongkan yang sudah
+ * diketik" — dan mengosongkannya diam-diam membuat nomor yang benar hilang
+ * tepat sebelum disimpan.
+ */
+function pakaiKandidat(k) {
+  el('tautan-supplier-id').value = k.supplier_id ?? '';
+  el('tautan-supplier-nama').value = k.supplier_nama ?? '';
+  if (k.no_rekening_tujuan) el('tautan-rekening').value = k.no_rekening_tujuan;
+  tutupKetik();
+  // Ditandai SESUDAH nilainya ditaruh: menyetelnya lewat .value tidak memicu
+  // peristiwa 'input', jadi penanda ketikan manusia di bawah tidak ikut jalan.
+  diisiOtomatis = true;
+}
+
+/**
+ * Mengisi formulir sendiri bila isinya memang boleh ditimpa.
+ *
+ * TIDAK PERNAH ikut menyimpan. Yang berpindah hanya isi kotak; tombol Simpan
+ * Tautan tetap harus ditekan manusia, dan supplier_id-nya terlihat di layar
+ * sebelum itu. Nama boleh menyarankan; yang mengikat tetap id yang dilihat
+ * dan disetujui orangnya.
+ */
+function isiOtomatis(k) {
+  const id = el('tautan-supplier-id');
+  const nama = el('tautan-supplier-nama');
+  if (!id || !nama) return false;
+
+  const kosong = id.value.trim() === '' && nama.value.trim() === '';
+  if (!kosong && !diisiOtomatis) return false;
+
+  pakaiKandidat(k);
+  return true;
+}
+
+/**
+ * @param {boolean} sebutEntitas Menuliskan perusahaannya pada tiap tombol.
+ *
+ * Dipakai daftar ketik-cari, yang bisa memuat beberapa perusahaan sekaligus.
+ * Tanpa itu, dua supplier_id yang berbeda tampil dengan nama yang sama persis
+ * dan tidak ada apa pun di layar yang membedakannya — padahal yang satu
+ * rekening PT dan yang satu rekening CV. Daftar saran tidak memerlukannya:
+ * seluruh isinya memang sudah seentitas dengan transaksi yang dipilih.
+ */
+function daftarKandidat(kandidat, sebutEntitas = false) {
   return `<div class="kandidat-supplier">${kandidat.map((k) => `
     <button type="button" class="tombol-lembut pakai-kandidat"
-            data-id="${aman(k.supplier_id)}" data-nama="${aman(k.supplier_nama)}">
-      ${aman(k.supplier_nama)} <small>${aman(k.supplier_id)}</small>
+            data-id="${aman(k.supplier_id)}" data-nama="${aman(k.supplier_nama)}"
+            data-rekening="${aman(k.no_rekening_tujuan ?? '')}">
+      ${aman(k.supplier_nama)} <small>${aman(k.supplier_id)}</small>${sebutEntitas
+        ? ` <small>${aman(LABEL_ENTITAS[k.entitas] ?? k.entitas ?? '')}</small>`
+        : ''}
     </button>`).join('')}</div>`;
+}
+
+// ---------------------------------------------------------------------------
+// Ketik beberapa huruf, supplier yang pernah ditautkan muncul
+//
+// Pelengkap pengisian otomatis, untuk dua keadaan yang tidak terjangkau
+// olehnya: keterangan bank yang menulis namanya berbeda sama sekali, dan
+// transaksi yang memang belum pernah dipetakan atas nama itu.
+//
+// Daftarnya ingatan, BUKAN master supplier. Felis tidak punya master supplier
+// dan tidak pernah membuat id sendiri; yang muncul di sini hanya supplier yang
+// sudah pernah ditautkan manusia dari halaman ini.
+// ---------------------------------------------------------------------------
+
+function tutupKetik() {
+  const kotak = el('tautan-ketik');
+  if (!kotak) return;
+  kotak.innerHTML = '';
+  kotak.hidden = true;
+}
+
+/**
+ * Ingatan pemetaan, ditarik sekali lalu disaring di layar.
+ *
+ * Satu permintaan per huruf akan membuat kotak ini berkedip mengikuti jaringan
+ * dan menampilkan hasil ketikan yang sudah lewat. Daftarnya kecil dan berubah
+ * hanya saat ada pengikatan baru, jadi menyimpannya di memori halaman aman —
+ * dan simpanan itu dibuang setiap kali ada tautan baru tersimpan.
+ */
+async function daftarPemetaan() {
+  if (cachePemetaan) return cachePemetaan;
+  try {
+    const { data } = await ambil('/tautan/pemetaan');
+    cachePemetaan = data ?? [];
+  } catch {
+    // Ingatan adalah pemanis. Gagal memuatnya tidak boleh membuat panel yang
+    // dipakai mengikat pembayaran ikut tampak rusak; kotaknya cuma tidak
+    // memunculkan apa-apa, dan ketikan manualnya tetap jalan.
+    cachePemetaan = [];
+  }
+  return cachePemetaan;
+}
+
+async function ketikCari() {
+  const kotak = el('tautan-ketik');
+  const isian = el('tautan-supplier-nama');
+  if (!kotak || !isian) return;
+
+  const kata = isian.value;
+  if (kata.trim().length < PANJANG_KETIK_MINIMAL) { tutupKetik(); return; }
+
+  const semua = await daftarPemetaan();
+  // Disaring ke entitas transaksi yang sedang dipilih bila diketahui. Selama
+  // belum ada yang dipilih, daftarnya dibiarkan utuh — menyaringnya ke PT
+  // secara diam-diam akan menyembunyikan pemetaan CV dari layar yang sama.
+  const sePerusahaan = entitasAktif ? semua.filter((p) => p.entitas === entitasAktif) : semua;
+  const hasil = cariPemetaan(sePerusahaan, kata);
+
+  // Isian bisa sudah berubah lagi selagi daftarnya ditunggu.
+  if (isian.value !== kata) return;
+
+  if (hasil.length === 0) { tutupKetik(); return; }
+
+  kotak.hidden = false;
+  kotak.innerHTML = `
+    <p class="keterangan-panel">Pernah ditautkan sebelumnya &mdash; pilih untuk mengisi formulir:</p>
+    ${daftarKandidat(hasil, !entitasAktif)}`;
 }
 
 // Bentuk canonical supplier_profiles.id milik alyssa-dev. Dicek juga di sini
@@ -184,6 +334,13 @@ async function simpanTautan() {
     ? `${berhasil.length} transaksi ditautkan ke ${supplierNama}.`
     : `${berhasil.length} berhasil, ${gagal.length} gagal — ${gagal.join(' | ')}`;
 
+  // Pengikatan yang berhasil menambah satu pemetaan baru, jadi ingatan yang
+  // tersimpan di halaman sudah basi. Dibuang, bukan ditambahi: yang tersimpan
+  // di database adalah yang benar, dan menebak isinya dari sini akan membuat
+  // daftar di layar berbeda dari yang dipakai server menyusun saran.
+  if (berhasil.length > 0) cachePemetaan = null;
+  tutupKetik();
+
   terpilih = new Set();
   for (const k of kotakPilih()) k.checked = false;
   perbaruiHitungan();
@@ -242,8 +399,26 @@ export function pasangKendaliTautan() {
   document.addEventListener('click', (ev) => {
     const tombol = ev.target.closest?.('.pakai-kandidat');
     if (!tombol) return;
-    el('tautan-supplier-id').value = tombol.dataset.id;
-    el('tautan-supplier-nama').value = tombol.dataset.nama;
+    pakaiKandidat({
+      supplier_id: tombol.dataset.id,
+      supplier_nama: tombol.dataset.nama,
+      no_rekening_tujuan: tombol.dataset.rekening || null,
+    });
+  });
+
+  // Ketikan manusia melepas penanda pengisian otomatis, sehingga saran
+  // berikutnya tidak menimpanya. Dipasang pada ketiga kotak, bukan hanya pada
+  // nama: orang yang menempel supplier_id lebih dulu juga sedang mengetik.
+  for (const nama of ['tautan-supplier-id', 'tautan-supplier-nama', 'tautan-rekening']) {
+    el(nama)?.addEventListener('input', () => { diisiOtomatis = false; });
+  }
+
+  el('tautan-supplier-nama')?.addEventListener('input', ketikCari);
+  el('tautan-supplier-nama')?.addEventListener('focus', ketikCari);
+  el('tautan-supplier-nama')?.addEventListener('blur', () => {
+    // Ditunda sesaat: klik pada kandidat terjadi SESUDAH blur, dan menutup
+    // daftarnya seketika membuat tombolnya hilang sebelum kliknya sampai.
+    setTimeout(tutupKetik, 150);
   });
 
   el('tautan-simpan')?.addEventListener('click', simpanTautan);
@@ -269,11 +444,6 @@ export function pasangKendaliTautan() {
 // Menggabungkan totalnya membuat kewajiban satu perusahaan tampak terbayar
 // oleh uang perusahaan lain, tanpa satu pun galat.
 // ---------------------------------------------------------------------------
-
-const LABEL_ENTITAS = {
-  PT_ALYSSA_AUTO_LOGISTIK: 'PT Alyssa Auto Logistik',
-  CV_ALYSSA_TRANS_UTAMA: 'CV Alyssa Trans Utama',
-};
 
 const LABEL_STATUS = {
   BELUM_DITETAPKAN: ['netral', 'Kewajiban belum ditetapkan'],

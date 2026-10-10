@@ -32,6 +32,14 @@ for (const berkas of ['entitas.js', 'laporan.js']) {
   );
 }
 
+// Aturan pencocokan nama pemetaan supplier, dengan alasan yang sama persis:
+// server memakainya untuk MENYUSUN saran, peramban untuk menyaring daftar
+// sambil diketik. Dua salinan akan membuat yang tampak di layar berbeda dari
+// yang diputuskan server, tanpa satu pun galat.
+app.get('/cocok-nama.js', (_req, res) =>
+  res.type('application/javascript').sendFile(join(akar, 'src/integrasi/cocok-nama.js'))
+);
+
 app.use(express.static(join(akar, 'public')));
 
 // Dipakai Railway untuk memastikan container sudah siap. Sengaja tidak
