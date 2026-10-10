@@ -81,4 +81,5 @@ export const URUTAN = [
   '0013_integrasi_supplier.sql',
   '0014_riwayat_pembayaran_supplier.sql',
   '0015_supplier_id_canonical.sql',
+  '0016_lepas_tautan.sql',
 ];

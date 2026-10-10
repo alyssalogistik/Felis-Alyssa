@@ -1686,6 +1686,19 @@ begin
   end if;
 end
 $pagar$;
+--
+--
+--
+--
+--
+alter table tautan_pembayaran
+  drop constraint if exists tautan_pembayaran_status_check;
+alter table tautan_pembayaran
+  add constraint tautan_pembayaran_status_check
+  check (status in ('siap', 'ditarik', 'dibatalkan', 'perlu_koreksi_hilir', 'menunggu_lepas'));
+create index if not exists idx_tautan_menunggu_lepas
+  on tautan_pembayaran (status)
+  where status = 'menunggu_lepas';
 
 -- Setelah skema berubah, PostgREST masih memakai peta lama sampai diberi
 -- tahu. Tanpa ini tabel baru tetap dilaporkan "not found in the schema

@@ -21,7 +21,8 @@ import { ENTITAS, kodeEntitas } from '../rekonsiliasi/entitas.js';
 import { namaDariKeterangan } from '../rekonsiliasi/nama.js';
 import {
   STATUS, AKSI, SEBAB,
-  kunciSaran, layakDitautkan, supplierValid, pilihSaran, layakDitarik, payloadPembayaran,
+  kunciSaran, layakDitautkan, supplierValid, pilihSaran, layakDitarik, layakDilepas,
+  payloadPembayaran,
   idTerpakai,
   normalSupplierId, POLA_SUPPLIER_ID,
 } from './tautan.js';
@@ -599,6 +600,72 @@ api.delete('/tautan/:transaksi_id', jalur(async (req, res) => {
   res.json(data);
 }));
 
+/**
+ * Melepas tautan yang SUDAH ditarik alyssa-dev. Owner saja.
+ *
+ * Jatuh ke IZIN.OWNER lewat bawaan kebijakan — bukan GET, dan tidak disebut di
+ * daftar mana pun — jadi auditor tidak bisa menyentuhnya walau tahu alamatnya.
+ *
+ * TIDAK menghapus apa pun. Baris transaksi_bank, nominal, tanggal, keterangan,
+ * alokasi pekerjaan, dan seluruh riwayat tetap utuh; yang berubah hanya status
+ * ikatannya ke supplier. Itu sebabnya endpoint ini POST ke sub-jalur, bukan
+ * DELETE: yang terjadi adalah perubahan keadaan, bukan penghapusan, dan nama
+ * metodenya tidak boleh menyarankan hal yang lain.
+ */
+api.post('/tautan/:transaksi_id/lepas', jalur(async (req, res) => {
+  const tautan = await ambilTautan(req.params.transaksi_id);
+  const { alasan, paksa, sudah_dihapus_di_hilir } = req.body ?? {};
+
+  const boleh = layakDilepas(tautan, { alasan, paksa, sudah_dihapus_di_hilir });
+  if (!boleh.ok) {
+    return res.status(tautan ? 409 : 404).json({ pesan: boleh.pesan, kode: boleh.sebab });
+  }
+
+  // Perubahannya bersyarat status: dua permintaan yang berjalan bersamaan tidak
+  // bisa sama-sama berhasil, karena yang kedua tidak menemukan baris berstatus
+  // itu lagi. Pola yang sama dipakai tandai-tertarik dan koreksi/akui.
+  const { data, error } = await db
+    .from('tautan_pembayaran')
+    .update({
+      status: boleh.status_baru,
+      alasan: boleh.alasan,
+      ...(boleh.paksa
+        ? { dibatalkan_pada: new Date().toISOString(), dibatalkan_oleh: pelaku(req) }
+        : {}),
+    })
+    .eq('transaksi_id', tautan.transaksi_id)
+    .eq('status', tautan.status)
+    .select(KOLOM_TAUTAN)
+    .single();
+  if (error) throw error;
+
+  // Riwayat ditulis SESUDAH perubahannya berhasil, dan memuat status lama
+  // beserta suppliernya. Tabel itu hanya bisa ditambah — bahkan service_role
+  // tidak bisa menghapusnya — sehingga pelepasan paksa tidak pernah bisa
+  // dihilangkan jejaknya oleh siapa pun, termasuk yang melakukannya.
+  await catatRiwayat({
+    transaksi_id: tautan.transaksi_id,
+    aksi: boleh.aksi,
+    supplier_id_lama: tautan.supplier_id,
+    status_lama: tautan.status,
+    status_baru: data.status,
+    alasan: boleh.paksa
+      ? `${boleh.alasan} [dinyatakan sudah dihapus di alyssa-dev]`
+      : boleh.alasan,
+    oleh: pelaku(req),
+  });
+
+  res.json({
+    ...data,
+    dilepas_paksa: boleh.paksa,
+    pesan: boleh.paksa
+      ? 'Tautan dilepas. Transaksinya kembali bebas ditautkan, dan TIDAK dikirim '
+        + 'ulang ke alyssa-dev sampai Anda menautkannya lagi.'
+      : 'Permintaan pelepasan dicatat. Transaksinya belum bebas — menunggu '
+        + 'alyssa-dev mengaku sudah menghapus catatan pembayarannya.',
+  });
+}));
+
 // ===========================================================================
 // INTEGRASI — token servis, dipanggil alyssa-dev
 // ===========================================================================
@@ -796,6 +863,90 @@ api.post('/integrasi/koreksi/akui', jalur(async (req, res) => {
   }
 
   res.json({ diakui: (data ?? []).length });
+}));
+
+/**
+ * Pelepasan tautan yang menunggu diproses alyssa-dev.
+ *
+ * Bentuknya sengaja sama dengan /integrasi/koreksi: alyssa-dev cukup menambah
+ * satu pembacaan, bukan mempelajari pola baru.
+ */
+api.get('/integrasi/lepas', jalur(async (req, res) => {
+  const { data, error } = await db
+    .from('tautan_pembayaran').select(KOLOM_TAUTAN)
+    .eq('status', STATUS.MENUNGGU_LEPAS).limit(BATAS_TARIK);
+  if (error) throw error;
+
+  const tautan = data ?? [];
+  if (tautan.length === 0) return res.json({ jumlah: 0, data: [] });
+
+  // Alasannya dibaca dari riwayat, bukan dari kolom alasan barisnya: kolom itu
+  // ikut ditimpa oleh aksi lain, sedangkan riwayat tidak pernah berubah.
+  const { data: riwayat, error: galatRiwayat } = await db
+    .from('tautan_pembayaran_riwayat')
+    .select('transaksi_id, alasan, pada')
+    .eq('aksi', AKSI.MINTA_LEPAS)
+    .in('transaksi_id', tautan.map((t) => t.transaksi_id))
+    .order('pada', { ascending: false });
+  if (galatRiwayat) throw galatRiwayat;
+
+  const terbaru = new Map();
+  for (const r of riwayat ?? []) if (!terbaru.has(r.transaksi_id)) terbaru.set(r.transaksi_id, r);
+
+  res.json({
+    jumlah: tautan.length,
+    data: tautan.map((t) => ({
+      bank_transaction_id: t.transaksi_id,
+      idempotency_key: t.transaksi_id,
+      supplier_id: t.supplier_id,
+      supplier_name: t.supplier_nama,
+      nominal: Number(t.nominal),
+      tanggal: t.tanggal,
+      batch_tarik: t.batch_tarik,
+      alasan: terbaru.get(t.transaksi_id)?.alasan ?? null,
+    })),
+  });
+}));
+
+/**
+ * alyssa-dev mengaku sudah menghapus catatan pembayarannya.
+ *
+ * Barulah di sini transaksinya benar-benar bebas. Idempoten lewat syarat
+ * status: mengirim daftar yang sama dua kali tidak menulis apa pun pada kali
+ * kedua.
+ */
+api.post('/integrasi/lepas/akui', jalur(async (req, res) => {
+  const { transaksi_id } = req.body ?? {};
+  if (!Array.isArray(transaksi_id) || transaksi_id.length === 0) {
+    return res.status(400).json({ pesan: 'transaksi_id wajib berupa daftar tidak kosong.' });
+  }
+  const daftar = transaksi_id.filter((x) => POLA_UUID.test(String(x)));
+  if (daftar.length === 0) return res.status(400).json({ pesan: 'Tidak ada transaksi_id yang sah.' });
+
+  const { data, error } = await db
+    .from('tautan_pembayaran')
+    .update({
+      status: STATUS.DIBATALKAN,
+      dibatalkan_pada: new Date().toISOString(),
+      dibatalkan_oleh: 'alyssa-dev',
+    })
+    .in('transaksi_id', daftar)
+    .eq('status', STATUS.MENUNGGU_LEPAS)
+    .select(KOLOM_TAUTAN);
+  if (error) throw error;
+
+  for (const t of data ?? []) {
+    await catatRiwayat({
+      transaksi_id: t.transaksi_id,
+      aksi: AKSI.AKUI_LEPAS,
+      supplier_id_lama: t.supplier_id,
+      status_lama: STATUS.MENUNGGU_LEPAS,
+      status_baru: STATUS.DIBATALKAN,
+      oleh: pelaku(req),
+    });
+  }
+
+  res.json({ dilepas: (data ?? []).length });
 }));
 
 export default api;

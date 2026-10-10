@@ -560,6 +560,50 @@
 
       <button type="button" id="tautan-simpan" class="tombol" disabled>Simpan Tautan</button>
       <p class="pesan" id="tautan-pesan" hidden></p>
+
+      <!-- Melepas tautan yang SUDAH ditarik alyssa-dev. Owner saja.
+           data-owner menyembunyikannya dari auditor, tetapi yang benar-benar
+           menahan tetap server: endpoint di baliknya jatuh ke IZIN.OWNER lewat
+           bawaan kebijakan, jadi auditor yang mengetik alamatnya langsung tetap
+           dijawab 403. -->
+      <details class="panel lipat" id="panel-lepas" data-owner>
+        <summary>Lepas Tautan yang Sudah Ditarik (Owner)</summary>
+
+        <p class="keterangan-panel">
+          Dipakai ketika pemetaan supplier keliru dan catatan pembayarannya perlu
+          dilepas. <b>Tidak satu baris transaksi bank pun dihapus</b> &mdash;
+          nominal, tanggal, keterangan, dan alokasi pekerjaannya tetap utuh.
+          Yang dilepas hanya ikatannya ke supplier.
+        </p>
+
+        <label>
+          Alasan pelepasan (wajib)
+          <input type="text" id="lepas-alasan" autocomplete="off"
+                 placeholder="mis. salah supplier, dikoreksi saat uji coba">
+        </label>
+
+        <button type="button" id="lepas-minta" class="tombol-lembut" disabled>
+          Minta Pelepasan ke alyssa-dev
+        </button>
+
+        <p class="keterangan-panel">
+          Cara di atas menunggu alyssa-dev menghapus catatannya lebih dulu, dan
+          itu yang paling aman. Pakai yang di bawah hanya bila Anda
+          <b>sudah menghapusnya sendiri di sana</b>.
+        </p>
+
+        <label class="sebaris">
+          <input type="checkbox" id="lepas-hilir">
+          Saya sudah menghapus catatan pembayarannya di alyssa-dev
+        </label>
+
+        <button type="button" id="lepas-paksa" class="tombol-lembut" disabled>
+          Lepas Paksa
+        </button>
+
+        <div id="lepas-konfirmasi" hidden></div>
+        <p class="pesan" id="lepas-pesan" hidden></p>
+      </details>
     </details>
 
     <!-- Riwayat pembayaran per supplier, DIPISAH per PT dan CV.

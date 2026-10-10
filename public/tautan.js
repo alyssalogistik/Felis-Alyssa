@@ -236,6 +236,7 @@ export function pasangKendaliTautan() {
     if (kosongSebelumnya && terpilih.size > 0) panel.open = true;
 
     perbaruiHitungan();
+    perbaruiTombolLepas();
     muatSaran();
   });
 
@@ -501,4 +502,194 @@ export function pasangKendaliSiapTautkan() {
   el('siap-cari')?.addEventListener('keydown', (ev) => {
     if (ev.key === 'Enter') { ev.preventDefault(); muatSiapTautkan(); }
   });
+}
+
+// ---------------------------------------------------------------------------
+// Melepas tautan yang SUDAH ditarik alyssa-dev
+//
+// Jalur ini ada karena `ditarik` dulunya status terminal: tidak satu pun tombol
+// bisa memindahkannya. Benar untuk operasional — uangnya sudah keluar, dan yang
+// bisa dibatalkan hanya pencatatannya di alyssa-dev. Tetapi pada masa uji coba
+// pemiliknya memang menghapus catatan di sana, dan Felis tidak pernah diberi
+// tahu; barisnya tertinggal `ditarik` selamanya dan transaksinya tidak bisa
+// ditautkan ulang sama sekali. Terukur dari pemakaian sungguhan: 16 transaksi
+// MARTHEN RUNTURAMBI ditolak 16 dari 16.
+//
+// Dua tombol, dan yang aman didahulukan di layar. Yang paksa menuntut centang
+// terpisah, karena ia melewati satu-satunya penjaga yang menahan satu transfer
+// tercatat dua kali di alyssa-dev.
+// ---------------------------------------------------------------------------
+
+/** Tautan terpilih beserta keadaannya, dibaca dari server bukan ditebak layar. */
+async function tautanTerpilih() {
+  if (terpilih.size === 0) return [];
+  const { data } = await ambil(`/tautan?transaksi_id=${encodeURIComponent([...terpilih].join(','))}`);
+  return data ?? [];
+}
+
+function perbaruiTombolLepas() {
+  const minta = el('lepas-minta');
+  const paksa = el('lepas-paksa');
+  if (!minta || !paksa) return;
+  const adaAlasan = (el('lepas-alasan')?.value ?? '').trim() !== '';
+  const adaPilihan = terpilih.size > 0;
+  minta.disabled = !(adaPilihan && adaAlasan);
+  paksa.disabled = !(adaPilihan && adaAlasan && el('lepas-hilir')?.checked);
+}
+
+function pesanLepas(kelas, teks) {
+  const kotak = el('lepas-pesan');
+  if (!kotak) return;
+  kotak.className = `pesan ${kelas}`;
+  kotak.innerHTML = teks;
+  kotak.hidden = teks === '';
+}
+
+function tutupKonfirmasiLepas() {
+  const kotak = el('lepas-konfirmasi');
+  if (!kotak) return;
+  kotak.innerHTML = '';
+  kotak.hidden = true;
+}
+
+/**
+ * Konfirmasi yang menyebut transaksi mana yang terdampak.
+ *
+ * Bukan dialog "yakin?" yang kosong: yang ditampilkan adalah tanggal, nominal,
+ * supplier, dan status tiap baris yang akan berubah. Orang tidak bisa menyetujui
+ * sesuatu yang tidak disebutkan kepadanya, dan di layar ini yang disetujui
+ * berakibat pada catatan uang di sistem lain.
+ */
+async function siapkanKonfirmasi(paksa) {
+  const kotak = el('lepas-konfirmasi');
+  if (!kotak) return;
+
+  pesanLepas('', 'Memeriksa transaksi terpilih…');
+  let daftar;
+  try {
+    daftar = await tautanTerpilih();
+  } catch (galat) {
+    pesanLepas('gagal', aman(galat.message));
+    return;
+  }
+
+  // Yang belum ditarik tidak lewat jalur ini — pembatalannya sudah punya
+  // tombolnya sendiri, dan menyeretnya ke sini hanya menambah jalur kedua untuk
+  // hal yang sama.
+  const kena = daftar.filter((t) => t.status === 'ditarik' || t.status === 'perlu_koreksi_hilir'
+    || (paksa && t.status === 'menunggu_lepas'));
+  const lewat = daftar.filter((t) => !kena.includes(t));
+
+  if (kena.length === 0) {
+    pesanLepas('gagal', 'Tidak ada transaksi terpilih yang berstatus ditarik. '
+      + 'Jalur ini hanya untuk tautan yang sudah ditarik alyssa-dev.');
+    tutupKonfirmasiLepas();
+    return;
+  }
+
+  pesanLepas('', '');
+  kotak.hidden = false;
+  kotak.innerHTML = `
+    <div class="panel">
+      <h3>${paksa ? '⚠ Lepas Paksa' : 'Minta Pelepasan'} &mdash; ${kena.length} transaksi</h3>
+      ${paksa ? `
+        <p class="peringatan-konflik">
+          Pelepasan ini <b>tidak menunggu alyssa-dev</b>. Kalau catatan
+          pembayarannya ternyata MASIH ada di sana dan transaksi ini ditautkan
+          lalu ditarik lagi, satu transfer akan tercatat <b>dua kali</b>.
+          Pastikan Anda benar-benar sudah menghapusnya.
+        </p>` : `
+        <p class="keterangan-panel">
+          Status berubah menjadi <b>menunggu lepas</b>. Transaksinya
+          <b>belum</b> bebas sampai alyssa-dev mengaku sudah menghapus
+          catatannya.
+        </p>`}
+      <div class="gulir-mendatar">
+        <table class="tabel">
+          <thead><tr><th>Tanggal</th><th>Supplier</th><th class="angka-kolom">Nominal</th><th>Status</th></tr></thead>
+          <tbody>${kena.map((t) => `
+            <tr>
+              <td>${aman(t.tanggal ?? '-')}</td>
+              <td>${aman(t.supplier_nama)} <small><code>${aman(t.supplier_id)}</code></small></td>
+              <td class="angka-kolom keluar">${aman(rupiah.format(Number(t.nominal ?? 0)))}</td>
+              <td>${aman(t.status)}</td>
+            </tr>`).join('')}
+          </tbody>
+        </table>
+      </div>
+      <p class="keterangan-panel">
+        Alasan tersimpan: <b>${aman((el('lepas-alasan')?.value ?? '').trim())}</b><br>
+        Tidak satu baris transaksi bank pun dihapus. Alokasi pekerjaan tetap utuh.
+      </p>
+      ${lewat.length > 0 ? `<p class="keterangan-panel">${lewat.length} transaksi terpilih
+        dilewati karena statusnya bukan ditarik.</p>` : ''}
+      <button type="button" class="tombol" id="lepas-ya"
+              data-paksa="${paksa ? '1' : ''}">Ya, lanjutkan</button>
+      <button type="button" class="tombol-lembut" id="lepas-batal">Batal</button>
+    </div>`;
+}
+
+async function jalankanLepas(paksa) {
+  const alasan = (el('lepas-alasan')?.value ?? '').trim();
+  let daftar;
+  try {
+    daftar = await tautanTerpilih();
+  } catch (galat) {
+    pesanLepas('gagal', aman(galat.message));
+    return;
+  }
+
+  const kena = daftar.filter((t) => t.status === 'ditarik' || t.status === 'perlu_koreksi_hilir'
+    || (paksa && t.status === 'menunggu_lepas'));
+
+  tutupKonfirmasiLepas();
+  pesanLepas('', `Melepas ${kena.length} tautan…`);
+
+  const berhasil = [];
+  const gagal = [];
+  for (const t of kena) {
+    try {
+      await ambil(`/tautan/${encodeURIComponent(t.transaksi_id)}/lepas`, {
+        method: 'POST',
+        body: JSON.stringify({ alasan, paksa, sudah_dihapus_di_hilir: paksa ? true : undefined }),
+      });
+      berhasil.push(t.transaksi_id);
+    } catch (galat) {
+      gagal.push(`${t.transaksi_id.slice(0, 8)}: ${galat.message}`);
+    }
+  }
+
+  pesanLepas(gagal.length === 0 ? 'berhasil' : 'gagal',
+    gagal.length === 0
+      ? aman(paksa
+        ? `${berhasil.length} tautan dilepas. Transaksinya kembali bebas ditautkan, dan tidak `
+          + 'dikirim ulang ke alyssa-dev sampai Anda menautkannya lagi.'
+        : `${berhasil.length} permintaan pelepasan dicatat. Menunggu alyssa-dev mengaku.`)
+      : aman(`${berhasil.length} berhasil, ${gagal.length} gagal — ${gagal.join(' | ')}`));
+
+  if (berhasil.length > 0) {
+    terpilih = new Set();
+    for (const k of kotakPilih()) k.checked = false;
+    perbaruiHitungan();
+    perbaruiTombolLepas();
+    await gambarLencana();
+    await muatRingkasanSiap();
+  }
+}
+
+export function pasangKendaliLepas() {
+  if (!el('panel-lepas')) return;
+
+  el('lepas-alasan')?.addEventListener('input', perbaruiTombolLepas);
+  el('lepas-hilir')?.addEventListener('change', perbaruiTombolLepas);
+  el('lepas-minta')?.addEventListener('click', () => siapkanKonfirmasi(false));
+  el('lepas-paksa')?.addEventListener('click', () => siapkanKonfirmasi(true));
+
+  // Delegasi: tombol konfirmasinya digambar ulang tiap kali.
+  document.addEventListener('click', (ev) => {
+    if (ev.target?.id === 'lepas-batal') { tutupKonfirmasiLepas(); return; }
+    if (ev.target?.id === 'lepas-ya') jalankanLepas(ev.target.dataset.paksa === '1');
+  });
+
+  perbaruiTombolLepas();
 }
