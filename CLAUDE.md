@@ -68,6 +68,41 @@ Tanpa framework dan tanpa build step — disengaja, jangan ditambahkan tanpa ala
 | `src/mekari/` | Audit Data Mekari. Terpisah penuh dari rekonsiliasi |
 | `supabase/migrations/` | Skema, dijalankan berurutan lewat SQL Editor |
 
+### Node 22 ke atas, dikunci — bukan saran
+
+`engines.node` menyebut `>=22`, dan `.nvmrc` menyebut `22`. Keduanya dibaca
+Nixpacks saat Railway membangun image.
+
+Ini bukan selera versi. `@supabase/supabase-js` yang terkunci di
+`package-lock.json` menuntut **`WebSocket` global bawaan Node**, dan global itu
+baru ada sejak Node 22. Di Node 18 atau 20 pembuatan client melempar:
+
+```
+Error: Node.js detected but native WebSocket not found.
+```
+
+Galatnya terjadi saat modul dimuat — `createAdminClient()` dipanggil di ruang
+modul oleh `src/rekonsiliasi/audit.js` — jadi ia jatuh di tengah evaluasi ESM,
+di luar jangkauan penangan galat Express, dan **prosesnya mati**.
+
+Sebelum dikunci, `engines` menyebut `>=18`, yang artinya Railway BOLEH memilih
+Node 18. Build yang sama berjalan normal berhari-hari, lalu satu build ulang
+memilih Node yang lebih tua dan production langsung CRASHED tanpa satu baris
+pun kode berubah. Jangan longgarkan angka ini tanpa memastikan pustakanya
+sudah tidak menuntut WebSocket bawaan.
+
+### Gagal memuat API tidak boleh mematikan proses
+
+`src/server.js` membungkus `import('./api.js')` dengan try/catch, melengkapi
+dua penjaga yang sudah ada — kredensial yang belum diisi, dan sasaran project
+yang salah. Ketiganya berakhir sama: server tetap menyala, `/healthz` tetap
+menjawab, dan `/api` menjawab 503 beserta sebabnya.
+
+Tanpa pembungkus itu, satu galat di ruang modul mematikan seluruh aplikasi —
+halaman statis pun ikut tidak bisa dibuka, dan sebabnya hanya terbaca kalau
+seseorang membuka log deployment. Yang rusak harus tinggal bagian yang memang
+rusak.
+
 ## Keamanan
 
 Row Level Security aktif di semua tabel **tanpa policy apa pun**. Kunci anon

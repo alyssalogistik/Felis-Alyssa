@@ -5,7 +5,7 @@
   "type": "module",
   "description": "Alyssa Auto Logistik - manajemen pengiriman kendaraan",
   "engines": {
-    "node": ">=18"
+    "node": ">=22"
   },
   "scripts": {
     "start": "node src/server.js",
