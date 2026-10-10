@@ -408,6 +408,22 @@ dialog .tombol-lembut, dialog .tombol { margin-top: 0; }
 .lencana-sumber.sumber-manual { background: rgba(169,112,255,.16); color: var(--ungu); }
 .baris-manual { background: rgba(169,112,255,.05); }
 
+/* Baris PEND: uangnya sudah keluar, tanggal bukunya belum ditetapkan BCA.
+   Diberi warna karena kotak pilihnya kosong — tanpa penanda, barisnya terbaca
+   seperti tombol yang hilang, bukan seperti keadaan yang memang begitu. */
+.baris-pend { background: rgba(245,165,36,.07); }
+.tanda-pend {
+  display: inline-block;
+  padding: 0 6px;
+  border-radius: 6px;
+  background: rgba(245,165,36,.18);
+  color: var(--aksen);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: .3px;
+  white-space: nowrap;
+}
+
 .baris-bayar {
   display: flex; flex-direction: column; gap: 4px;
   padding: 12px 0; border-bottom: 1px solid var(--garis);
@@ -609,6 +625,10 @@ dialog .tombol-lembut, dialog .tombol { margin-top: 0; }
   /* Warna layar (merah untuk debit, redup untuk nol) tidak dibawa ke kertas. */
   .tabel .angka-kolom.keluar, .tabel .nol, .tanda { color: #000 !important; }
   .tanda { background: none !important; }
+  /* PEND harus tetap terbaca di kertas putih: warnanya hilang saat dicetak,
+     jadi yang menahan tinggal hurufnya sendiri. */
+  .baris-pend { background: none !important; }
+  .tanda-pend { background: none !important; color: #000 !important; }
 
   /* Hanya keterangan yang boleh membungkus. Judul kolom dan nominal tetap satu
      baris: "KREDIT / MASUK" yang terbelah tiga baris membuat kepala tabel
