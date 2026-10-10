@@ -1061,6 +1061,57 @@ penarikan ULANG — dan itu ditahan `idempotency_key` di kedua sisi. Arah
 kesalahannya dipilih sadar: terkirim dua kali bisa ditolak, tidak pernah
 terkirim tidak bisa dideteksi.
 
+### Melepas tautan yang sudah ditarik
+
+`ditarik` dulunya status TERMINAL — tidak satu pun endpoint bisa memindahkannya.
+Aturan itu benar untuk operasional, tetapi menjebak pada masa uji coba: pemilik
+menghapus catatan pembayarannya di alyssa-dev, Felis tidak pernah diberi tahu,
+dan barisnya tertinggal `ditarik` selamanya sehingga transaksinya tidak bisa
+ditautkan ulang lewat layar sama sekali. Diukur dari pemakaian sungguhan: satu
+percobaan menautkan 16 transaksi MARTHEN RUNTURAMBI ditolak **16 dari 16**.
+
+Aturannya di `layakDilepas()` pada `src/integrasi/tautan.js` — murni dan teruji.
+Dua jalan keluar, dan yang aman adalah bawaannya:
+
+| | Jalur aman | Jalur paksa |
+|---|---|---|
+| Dipakai saat | alyssa-dev masih menyimpan catatannya | pemilik SUDAH menghapusnya sendiri |
+| Status menjadi | `menunggu_lepas` | `dibatalkan` |
+| Siapa yang menuntaskan | alyssa-dev lewat `POST /integrasi/lepas/akui` | selesai seketika |
+| Syarat tambahan | — | `sudah_dihapus_di_hilir: true` |
+
+**Status antara `menunggu_lepas` wajib, bukan hiasan.** Keadaan ini dipegang
+dua sistem, dan Felis tidak punya cara memeriksa apakah alyssa-dev masih
+menyimpan pembayarannya — yang tercatat di sini hanya bahwa Felis pernah
+MENGIRIM, bukan bahwa di sana masih ADA. Tanpa status antara, jarak waktu
+antara "Owner minta lepas" dan "alyssa-dev sudah hapus" tidak terlihat sama
+sekali.
+
+**Selama `menunggu_lepas`, transaksinya TIDAK bebas.** `idTerpakai()` masih
+menghitungnya dan `layakDitarik()` menolak menariknya, sehingga tidak ada
+jendela waktu di mana ia bisa ditautkan ulang lalu ikut tertarik sebelum
+pelepasannya tuntas. Hanya `dibatalkan` yang benar-benar membebaskan.
+
+**`menunggu_lepas` tidak boleh menumpang `perlu_koreksi_hilir`.** Keduanya
+sama-sama menunggu alyssa-dev, tetapi menuntut hal yang BERLAWANAN di sana:
+yang satu memindahkan pembayaran ke supplier lain, yang satu menghapusnya.
+Menumpangkannya membuat satu antrean memuat dua perintah yang bertentangan.
+
+**Yang dikunci jalur paksa bukan kebenarannya, melainkan siapa yang
+menyatakannya.** Felis tidak bisa memverifikasi penghapusan di sistem lain;
+yang bisa dilakukannya adalah menuntut pernyataan eksplisit dan menyimpannya
+permanen di `tautan_pembayaran_riwayat`, yang hanya bisa ditambah — bahkan
+service_role tidak bisa menghapusnya.
+
+**Tautan `siap` tidak pernah lewat jalur ini.** Pembatalannya sudah punya
+endpoint sendiri yang tidak menyentuh alyssa-dev sama sekali, karena memang
+belum pernah dikirim ke sana. Dua jalur untuk satu hal berarti dua tempat yang
+bisa menyimpang, dan yang menyimpang di sini melepas pembayaran yang seharusnya
+tertahan.
+
+Tidak satu baris `transaksi_bank` maupun `alokasi_pembayaran` yang disentuh —
+diuji dengan sidik jari tabel sebelum dan sesudah, dan keduanya identik.
+
 ### Koreksi sesudah ditarik tidak pernah diam-diam
 
 Yang belum ditarik diubah langsung. Yang sudah ditarik menjadi

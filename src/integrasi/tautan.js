@@ -18,6 +18,17 @@ export const STATUS = {
   DITARIK: 'ditarik',
   DIBATALKAN: 'dibatalkan',
   PERLU_KOREKSI_HILIR: 'perlu_koreksi_hilir',
+
+  /**
+   * Owner sudah minta tautannya dilepas; alyssa-dev belum mengaku.
+   *
+   * Bentuknya meniru PERLU_KOREKSI_HILIR, dan itu disengaja: dua sistem yang
+   * harus sepakat tidak boleh diubah sepihak. Selama berstatus ini transaksinya
+   * TIDAK bebas — idTerpakai() masih menghitungnya, dan layakDitarik() menolak
+   * menariknya — sehingga tidak ada jendela waktu di mana ia bisa ditautkan
+   * ulang lalu ikut tertarik sebelum pelepasannya tuntas.
+   */
+  MENUNGGU_LEPAS: 'menunggu_lepas',
 };
 
 export const AKSI = {
@@ -27,6 +38,10 @@ export const AKSI = {
   TARIK: 'TARIK',
   KOREKSI_HILIR: 'KOREKSI_HILIR',
   AKUI_KOREKSI: 'AKUI_KOREKSI',
+
+  MINTA_LEPAS: 'MINTA_LEPAS',
+  LEPAS_PAKSA: 'LEPAS_PAKSA',
+  AKUI_LEPAS: 'AKUI_LEPAS',
 };
 
 /** Sebab penolakan yang bisa diperiksa mesin, bukan dicocokkan dari teksnya. */
@@ -39,6 +54,12 @@ export const SEBAB = {
   SUPPLIER_KOSONG: 'supplier_kosong',
   SUPPLIER_TIDAK_CANONICAL: 'supplier_tidak_canonical',
   KONFLIK: 'konflik',
+
+  BELUM_DITARIK: 'belum_ditarik',
+  SUDAH_DILEPAS: 'sudah_dilepas',
+  SUDAH_MENUNGGU_LEPAS: 'sudah_menunggu_lepas',
+  ALASAN_KOSONG: 'alasan_kosong',
+  HILIR_BELUM_DIPASTIKAN: 'hilir_belum_dipastikan',
 };
 
 /**
@@ -217,6 +238,111 @@ export function idTerpakai(daftar) {
       .filter((t) => t?.transaksi_id && t.status !== STATUS.DIBATALKAN)
       .map((t) => t.transaksi_id)
   );
+}
+
+/**
+ * Boleh dilepas dari supplier, dan dengan cara apa?
+ *
+ * ## Kenapa jalur ini ada
+ *
+ * `ditarik` sebelumnya adalah status TERMINAL: tidak satu pun endpoint bisa
+ * memindahkannya. Aturannya benar untuk operasional — uangnya sudah keluar
+ * dari rekening, dan yang bisa dibatalkan hanya pencatatannya di alyssa-dev.
+ *
+ * Tetapi pada masa uji coba, pemilik memang menghapus catatan di alyssa-dev
+ * ketika pemetaannya keliru. Felis tidak pernah diberi tahu, sehingga barisnya
+ * tertinggal `ditarik` selamanya dan transaksinya tidak bisa ditautkan ulang
+ * lewat layar sama sekali. Diukur dari pemakaian sungguhan: satu percobaan
+ * menautkan 16 transaksi MARTHEN RUNTURAMBI ditolak 16 dari 16.
+ *
+ * ## Dua jalan keluar, dan yang aman adalah bawaannya
+ *
+ * **Tanpa `paksa`** — barisnya menjadi `menunggu_lepas` dan muncul di
+ * `GET /integrasi/lepas`. alyssa-dev yang menghapus catatannya lalu mengaku
+ * lewat `POST /integrasi/lepas/akui`, dan barulah statusnya `dibatalkan`.
+ * Bentuknya sama persis dengan alur koreksi yang sudah ada, dengan alasan yang
+ * sama: keadaan yang dipegang dua sistem tidak boleh diubah sepihak.
+ *
+ * **Dengan `paksa`** — langsung `dibatalkan`, tanpa menunggu siapa pun. Ini
+ * yang dipakai ketika pemiliknya SUDAH menghapus catatannya sendiri di
+ * alyssa-dev, sehingga tidak ada lagi yang akan mengaku. Karena itu ia menuntut
+ * pengakuan eksplisit lewat `sudah_dihapus_di_hilir`: yang dikunci bukan
+ * kebenarannya — Felis tidak punya cara memeriksanya — melainkan **siapa yang
+ * menyatakannya**, dan itu tersimpan permanen di riwayat.
+ *
+ * ## Yang tidak dilayani di sini
+ *
+ * Tautan `siap` TIDAK boleh lewat jalur ini. Pembatalannya sudah punya
+ * endpoint sendiri yang tidak menyentuh alyssa-dev sama sekali, karena memang
+ * belum pernah dikirim ke sana. Dua jalur untuk satu hal berarti dua tempat
+ * yang bisa menyimpang, dan yang menyimpang di sini melepas pembayaran yang
+ * seharusnya tertahan.
+ *
+ * @param {object|null} tautan baris tautan_pembayaran apa adanya
+ * @param {{alasan?: string, paksa?: boolean, sudah_dihapus_di_hilir?: boolean}} opsi
+ */
+export function layakDilepas(tautan, opsi = {}) {
+  if (!tautan) {
+    return { ok: false, sebab: SEBAB.SUDAH_DITAUT, pesan: 'Tautan tidak ditemukan.' };
+  }
+
+  if (tautan.status === STATUS.SIAP) {
+    return {
+      ok: false,
+      sebab: SEBAB.BELUM_DITARIK,
+      pesan: 'Tautan ini belum ditarik alyssa-dev, jadi tidak perlu dilepas paksa. '
+        + 'Batalkan saja lewat tombol pembatalan biasa.',
+    };
+  }
+
+  if (tautan.status === STATUS.DIBATALKAN) {
+    return {
+      ok: false,
+      sebab: SEBAB.SUDAH_DILEPAS,
+      pesan: 'Tautan ini sudah dibatalkan. Transaksinya sudah bebas ditautkan lagi.',
+    };
+  }
+
+  const alasan = String(opsi.alasan ?? '').trim();
+  if (alasan === '') {
+    return {
+      ok: false,
+      sebab: SEBAB.ALASAN_KOSONG,
+      pesan: 'Alasan pelepasan wajib diisi. Inilah satu-satunya keterangan yang '
+        + 'tersisa saat angkanya diperiksa nanti.',
+    };
+  }
+
+  const paksa = opsi.paksa === true;
+
+  // Yang sudah menunggu tidak boleh diminta lagi — tetapi BOLEH dipaksa, karena
+  // itulah jalan keluarnya ketika alyssa-dev ternyata tidak akan pernah mengaku.
+  if (tautan.status === STATUS.MENUNGGU_LEPAS && !paksa) {
+    return {
+      ok: false,
+      sebab: SEBAB.SUDAH_MENUNGGU_LEPAS,
+      pesan: 'Pelepasan tautan ini sudah diminta dan sedang menunggu pengakuan '
+        + 'alyssa-dev.',
+    };
+  }
+
+  if (paksa && opsi.sudah_dihapus_di_hilir !== true) {
+    return {
+      ok: false,
+      sebab: SEBAB.HILIR_BELUM_DIPASTIKAN,
+      pesan: 'Pelepasan paksa menuntut pernyataan bahwa catatan pembayarannya '
+        + 'SUDAH dihapus di alyssa-dev. Tanpa itu satu transfer bisa tercatat '
+        + 'dua kali di sana.',
+    };
+  }
+
+  return {
+    ok: true,
+    paksa,
+    alasan,
+    status_baru: paksa ? STATUS.DIBATALKAN : STATUS.MENUNGGU_LEPAS,
+    aksi: paksa ? AKSI.LEPAS_PAKSA : AKSI.MINTA_LEPAS,
+  };
 }
 
 export function layakDitarik(tautan) {
