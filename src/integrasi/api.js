@@ -19,6 +19,7 @@ import { randomUUID } from 'node:crypto';
 import { createAdminClient } from '../supabase.js';
 import { ENTITAS, kodeEntitas } from '../rekonsiliasi/entitas.js';
 import { namaDariKeterangan } from '../rekonsiliasi/nama.js';
+import { periksaRentang, terapkanRentang, pilihBebas } from './siap-tautkan.js';
 import {
   STATUS, AKSI, SEBAB,
   kunciSaran, layakDitautkan, supplierValid, pilihSaran, layakDitarik, layakDilepas,
@@ -26,6 +27,7 @@ import {
   idTerpakai,
   normalSupplierId, POLA_SUPPLIER_ID,
 } from './tautan.js';
+import { cocokkanPemetaan, satukanPemetaan } from './cocok-nama.js';
 import { lengkapiRingkasan, lengkapiRincian } from './ringkas.js';
 
 const db = createAdminClient();
@@ -37,6 +39,12 @@ const KOLOM_TAUTAN =
   'ditautkan_pada, ditautkan_oleh, batch_tarik, ditarik_pada, dibatalkan_pada, alasan';
 
 const BATAS_TARIK = 500;
+// Berapa pemetaan yang ditarik sekali baca. Pemetaan tumbuh satu baris per
+// pengikatan, jadi angkanya naik pelan; batas ini hanya menjaga supaya satu
+// permintaan tidak pernah menarik seluruh riwayat bertahun-tahun.
+const BATAS_PEMETAAN = 2000;
+const KOLOM_PEMETAAN =
+  'id, supplier_id, supplier_nama, no_rekening_tujuan, entitas, kunci_saran, status, konflik, dibuat_pada';
 const POLA_UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 function jalur(handler) {
@@ -118,16 +126,48 @@ api.get('/tautan/saran', jalur(async (req, res) => {
   const kelayakan = layakDitautkan(transaksi, tautan);
   const kunci = kunciSaran(transaksi.keterangan);
 
-  let kandidat = [];
+  // Dua jalan menuju pemetaan yang sama, lalu disatukan.
+  //
+  // Lewat KUNCI: cocok persis, termasuk kode banknya. Paling sempit, dan
+  // karena itu didahulukan sebagai wakil saat keduanya menunjuk supplier yang
+  // sama.
+  //
+  // Lewat NAMA: nama supplier yang pernah DIKETIK manusia dicari sebagai kata
+  // utuh di dalam keterangan. Ini yang membuat ingatan benar-benar berguna —
+  // kunci saran pecah mengikuti kalimat bank (lihat cocok-nama.js), sedangkan
+  // nama yang diketik tidak ikut berubah.
+  //
+  // Disatukan, bukan dipilih salah satu: kalau dua nama supplier yang berbeda
+  // sama-sama muncul utuh di satu keterangan, itu memang ambigu, dan
+  // pilihSaran() menjawabnya dengan konflik — tidak memilihkan apa pun.
+  let lewatKunci = [];
   if (kunci) {
     const { data, error } = await db
       .from('pemetaan_supplier_status')
-      .select('id, supplier_id, supplier_nama, no_rekening_tujuan, status, konflik')
+      .select(KOLOM_PEMETAAN)
       .eq('entitas', transaksi.entitas)
-      .eq('kunci_saran', kunci);
+      .eq('kunci_saran', kunci)
+      .eq('status', 'aktif')
+      .order('dibuat_pada', { ascending: false });
     if (error) throw error;
-    kandidat = data ?? [];
+    lewatKunci = data ?? [];
   }
+
+  // Pemetaan DIBATASI pada entitas transaksinya. PT dan CV membayar sebagian
+  // supplier yang sama dari rekening yang berbeda; ingatan yang menyeberang
+  // akan mengisi formulir PT dengan rekening tujuan yang pernah dipakai CV,
+  // dan salahnya tidak menimbulkan galat apa pun.
+  const { data: sePerusahaan, error: galatPeta } = await db
+    .from('pemetaan_supplier_status')
+    .select(KOLOM_PEMETAAN)
+    .eq('entitas', transaksi.entitas)
+    .eq('status', 'aktif')
+    .order('dibuat_pada', { ascending: false })
+    .limit(BATAS_PEMETAAN);
+  if (galatPeta) throw galatPeta;
+
+  const lewatNama = cocokkanPemetaan(transaksi.keterangan, sePerusahaan ?? []);
+  const kandidat = satukanPemetaan([...lewatKunci, ...lewatNama]);
 
   const { saran, konflik } = pilihSaran(kandidat);
   const kembar = await kembarSudahDitaut(transaksi.id);
@@ -196,6 +236,11 @@ api.get('/tautan/siap-tautkan', jalur(async (req, res) => {
 
   const batas = Math.min(Math.max(Number(req.query.batas) || 50, 1), 200);
 
+  // Rentang tanggal: salah satu sisi boleh kosong, inklusif di kedua ujung.
+  // Dari > Sampai ditolak di sini, bukan dibiarkan menjadi daftar kosong.
+  const rentang = periksaRentang(req.query.dari, req.query.sampai);
+  if (!rentang.ok) return res.status(400).json({ pesan: rentang.pesan });
+
   // Tautan dibaca lebih dulu dan seluruhnya: tabelnya kecil, dan
   // menyaringnya di sini jauh lebih jujur daripada menyaring di peramban
   // sesudah barisnya tergambar.
@@ -210,13 +255,18 @@ api.get('/tautan/siap-tautkan', jalur(async (req, res) => {
     .eq('entitas', kode)
     .gt('debit', 0)
     .not('tanggal', 'is', null)
-    .order('tanggal', { ascending: false })
-    .limit(batas + terpakai.size);
+    .order('tanggal', { ascending: false });
+
+  // Rentang dan kata kunci dipasang SEBELUM batas jumlah baris, bukan sesudah:
+  // batas yang jatuh lebih dulu memotong sebelum menyaring.
+  q = terapkanRentang(q, rentang.dari, rentang.sampai);
 
   if (req.query.cari) {
     const kata = String(req.query.cari).trim().replace(/\s+/g, ' ');
     if (kata !== '') q = q.ilike('keterangan', `%${kata}%`);
   }
+
+  q = q.limit(batas + terpakai.size);
 
   const { data, error } = await q;
   if (error) throw error;
@@ -224,11 +274,13 @@ api.get('/tautan/siap-tautkan', jalur(async (req, res) => {
   // Yang sudah tertaut dibuang SESUDAH diambil, lalu dipotong ke batas.
   // Batasnya dinaikkan sebanyak tautan yang ada supaya pembuangan ini tidak
   // membuat halamannya tampak lebih pendek daripada yang diminta.
-  const bebas = (data ?? []).filter((t) => !terpakai.has(t.id)).slice(0, batas);
+  const bebas = pilihBebas(data, terpakai, batas);
 
   res.json({
     entitas: kode,
     entitas_label: ENTITAS[kode] ?? kode,
+    dari: rentang.dari,
+    sampai: rentang.sampai,
     jumlah: bebas.length,
     tercapai_batas: bebas.length === batas,
     data: bebas.map((t) => ({
@@ -243,8 +295,20 @@ api.get('/tautan/siap-tautkan', jalur(async (req, res) => {
 }));
 
 api.get('/tautan/pemetaan', jalur(async (req, res) => {
-  const { data, error } = await db
-    .from('pemetaan_supplier_status').select('*').order('dibuat_pada', { ascending: false }).limit(2000);
+  let q = db
+    .from('pemetaan_supplier_status').select('*')
+    .order('dibuat_pada', { ascending: false }).limit(BATAS_PEMETAAN);
+
+  // Penyaring entitas opsional, dipakai kotak ketik-cari di panel tautan.
+  // Nilai yang TIDAK DIKENALI ditolak 400, bukan jatuh ke "semua" — aturan
+  // yang sama dengan seluruh penyaringan entitas di aplikasi ini.
+  if (req.query.entitas) {
+    const kode = kodeEntitas(req.query.entitas);
+    if (!kode) return res.status(400).json({ pesan: 'Entitas tidak dikenali.' });
+    q = q.eq('entitas', kode);
+  }
+
+  const { data, error } = await q;
   if (error) throw error;
 
   const semua = data ?? [];

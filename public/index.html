@@ -499,10 +499,10 @@
          terlihat dari lencana per baris, dan memeriksanya satu per satu di
          atas ribuan transaksi tidak mungkin.
 
-         SENGAJA TANPA TOTAL UANG. Daftar ini disaring oleh keadaan tautan,
-         sedangkan ringkasan di bawah tidak tahu apa-apa soal tautan; menaruh
-         angka di sini akan membuat dua angka yang menggambarkan dua himpunan
-         berbeda berdampingan di satu layar. -->
+         Angka jumlah dan total di panel ini HANYA untuk baris yang sedang
+         ditampilkan, dan diberi label begitu. Ringkasan di atas panel ini
+         tidak tahu apa-apa soal tautan, jadi keduanya menggambarkan himpunan
+         yang berbeda dan tidak boleh dibaca sebagai satu angka. -->
     <details class="panel" id="panel-siap-tautkan">
       <summary>Transaksi Siap Ditautkan</summary>
 
@@ -519,6 +519,25 @@
           <input type="text" id="siap-cari" placeholder="mis. BAGUS" autocomplete="off">
         </label>
       </div>
+      <div class="baris-formulir">
+        <label>
+          Dari tanggal
+          <input type="date" id="siap-dari">
+        </label>
+        <label>
+          Sampai tanggal
+          <input type="date" id="siap-sampai">
+        </label>
+      </div>
+      <div class="sejajar rapat" id="siap-pintasan">
+        <button type="button" class="tombol-lembut" data-pintasan="bulan_ini">Bulan ini</button>
+        <button type="button" class="tombol-lembut" data-pintasan="bulan_lalu">Bulan lalu</button>
+        <button type="button" class="tombol-lembut" data-pintasan="30_hari">30 hari terakhir</button>
+      </div>
+      <p class="keterangan-panel">
+        Rentang tanggal boleh diisi salah satu. Kedua ujung ikut dihitung.
+        Pintasan hanya mengisi tanggal; tekan <b>Muat daftar</b> untuk memuat.
+      </p>
       <button type="button" id="siap-muat" class="tombol-lembut">Muat daftar</button>
 
       <p class="pesan" id="siap-pesan" hidden></p>
@@ -552,6 +571,13 @@
           <input type="text" id="tautan-rekening" placeholder="dari master alyssa-dev" autocomplete="off">
         </label>
       </div>
+
+      <!-- Supplier yang pernah ditautkan, muncul sambil mengetik di kotak nama.
+           Tombolnya memakai kelas .pakai-kandidat yang sama dengan daftar saran
+           di atas, sehingga pendengar yang sudah ada langsung menanganinya —
+           tidak ada jalur pengisian kedua yang bisa menyimpang dari yang
+           pertama. -->
+      <div id="tautan-ketik" hidden></div>
 
       <p class="keterangan-panel">
         Nomor rekening di atas berasal dari master supplier alyssa-dev, bukan dari
