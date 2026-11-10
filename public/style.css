@@ -352,6 +352,11 @@ button.tombol-blok { width: 100%; margin-top: 14px; }
   font-size: 11px;
 }
 
+/* Baris yang kemungkinan dobel di panel Siap Ditautkan: ditandai, tidak
+   disembunyikan dan tidak dicentang. Yang memutuskan manusia. */
+.tanda-dobel { background: #b45309; color: #fff; margin-left: 6px; }
+.baris-dobel { outline: 1px dashed #b45309; outline-offset: -1px; }
+
 /* Bagian opsional yang dilipat: ada bila dibutuhkan, tidak menghalangi bila tidak. */
 .lipat > summary {
   cursor: pointer;

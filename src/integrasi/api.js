@@ -19,6 +19,7 @@ import { randomUUID } from 'node:crypto';
 import { createAdminClient } from '../supabase.js';
 import { ENTITAS, kodeEntitas } from '../rekonsiliasi/entitas.js';
 import { namaDariKeterangan } from '../rekonsiliasi/nama.js';
+import { periksaRentang, terapkanRentang, pilihBebas } from './siap-tautkan.js';
 import {
   STATUS, AKSI, SEBAB,
   kunciSaran, layakDitautkan, supplierValid, pilihSaran, layakDitarik, payloadPembayaran,
@@ -234,6 +235,11 @@ api.get('/tautan/siap-tautkan', jalur(async (req, res) => {
 
   const batas = Math.min(Math.max(Number(req.query.batas) || 50, 1), 200);
 
+  // Rentang tanggal: salah satu sisi boleh kosong, inklusif di kedua ujung.
+  // Dari > Sampai ditolak di sini, bukan dibiarkan menjadi daftar kosong.
+  const rentang = periksaRentang(req.query.dari, req.query.sampai);
+  if (!rentang.ok) return res.status(400).json({ pesan: rentang.pesan });
+
   // Tautan dibaca lebih dulu dan seluruhnya: tabelnya kecil, dan
   // menyaringnya di sini jauh lebih jujur daripada menyaring di peramban
   // sesudah barisnya tergambar.
@@ -248,13 +254,18 @@ api.get('/tautan/siap-tautkan', jalur(async (req, res) => {
     .eq('entitas', kode)
     .gt('debit', 0)
     .not('tanggal', 'is', null)
-    .order('tanggal', { ascending: false })
-    .limit(batas + terpakai.size);
+    .order('tanggal', { ascending: false });
+
+  // Rentang dan kata kunci dipasang SEBELUM batas jumlah baris, bukan sesudah:
+  // batas yang jatuh lebih dulu memotong sebelum menyaring.
+  q = terapkanRentang(q, rentang.dari, rentang.sampai);
 
   if (req.query.cari) {
     const kata = String(req.query.cari).trim().replace(/\s+/g, ' ');
     if (kata !== '') q = q.ilike('keterangan', `%${kata}%`);
   }
+
+  q = q.limit(batas + terpakai.size);
 
   const { data, error } = await q;
   if (error) throw error;
@@ -262,11 +273,13 @@ api.get('/tautan/siap-tautkan', jalur(async (req, res) => {
   // Yang sudah tertaut dibuang SESUDAH diambil, lalu dipotong ke batas.
   // Batasnya dinaikkan sebanyak tautan yang ada supaya pembuangan ini tidak
   // membuat halamannya tampak lebih pendek daripada yang diminta.
-  const bebas = (data ?? []).filter((t) => !terpakai.has(t.id)).slice(0, batas);
+  const bebas = pilihBebas(data, terpakai, batas);
 
   res.json({
     entitas: kode,
     entitas_label: ENTITAS[kode] ?? kode,
+    dari: rentang.dari,
+    sampai: rentang.sampai,
     jumlah: bebas.length,
     tercapai_batas: bebas.length === batas,
     data: bebas.map((t) => ({

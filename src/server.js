@@ -40,6 +40,13 @@ app.get('/cocok-nama.js', (_req, res) =>
   res.type('application/javascript').sendFile(join(akar, 'src/integrasi/cocok-nama.js'))
 );
 
+// Aturan rentang tanggal panel "Transaksi Siap Ditautkan": validasi, pintasan,
+// ringkasan, dan penanda kemungkinan dobel. Satu berkas untuk server dan layar
+// karena alasan yang sama seperti di atas.
+app.get('/siap-tautkan.js', (_req, res) =>
+  res.type('application/javascript').sendFile(join(akar, 'src/integrasi/siap-tautkan.js'))
+);
+
 app.use(express.static(join(akar, 'public')));
 
 // Dipakai Railway untuk memastikan container sudah siap. Sengaja tidak
