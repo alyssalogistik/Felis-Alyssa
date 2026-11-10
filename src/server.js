@@ -47,6 +47,13 @@ app.get('/siap-tautkan.js', (_req, res) =>
   res.type('application/javascript').sendFile(join(akar, 'src/integrasi/siap-tautkan.js'))
 );
 
+// siap-tautkan.js memakai aturan "inti keterangan" milik penjaga unggahan.
+// Alamatnya mengikuti impor relatifnya (`../rekonsiliasi/pending.js` dari
+// `/siap-tautkan.js` jatuh di sini), jadi satu berkas untuk server dan layar.
+app.get('/rekonsiliasi/pending.js', (_req, res) =>
+  res.type('application/javascript').sendFile(join(akar, 'src/rekonsiliasi/pending.js'))
+);
+
 app.use(express.static(join(akar, 'public')));
 
 // Dipakai Railway untuk memastikan container sudah siap. Sengaja tidak

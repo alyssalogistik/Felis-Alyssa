@@ -239,3 +239,41 @@ test('penanda dobel hanya melaporkan: daftar masukan tidak berubah', () => {
   ringkasHasil(masukan);
   assert.deepEqual(masukan, salinan);
 });
+
+// ---------------------------------------------------------------------------
+// Kemungkinan dobel dari DUA CETAKAN BCA (e-statement vs Mutasi Rekening)
+// ---------------------------------------------------------------------------
+
+test('transfer yang sama dari e-statement dan Mutasi Rekening ditandai dobel', () => {
+  // Kasus nyata: satu transfer tersimpan dua kali. Mutasi memakai awalan
+  // "TRSF E-BANKING DB" (referensi terisi), e-statement tidak (referensi kosong).
+  const dobel = idKemungkinanDobel([
+    baris('mutasi', '2026-10-01', 10000000, 'TRSF E-BANKING DB 0110/FTSCY/WS95051 10000000.00 AHMAD TAUFDIQ'),
+    baris('estatement', '2026-10-01', 10000000, '0110/FTSCY/WS95051 10000000.00 AHMAD TAUFDIQ'),
+  ]);
+  assert.deepEqual([...dobel].sort(), ['estatement', 'mutasi']);
+});
+
+test('awalan BI-FAST DB vs BIF juga dikenali sebagai transaksi yang sama', () => {
+  const dobel = idKemungkinanDobel([
+    baris('m', '2026-10-01', 500000, 'BI-FAST DB TRANSFER KE 008 HERMANSYAH KBB'),
+    baris('e', '2026-10-01', 500000, 'BIF TRANSFER KE 008 HERMANSYAH KBB'),
+  ]);
+  assert.deepEqual([...dobel].sort(), ['e', 'm']);
+});
+
+test('awalan yang sama tidak membuat dua transfer berbeda tertandai', () => {
+  const dobel = idKemungkinanDobel([
+    baris('a', '2026-10-01', 10000000, 'TRSF E-BANKING DB 0110/FTSCY/WS95051 AHMAD TAUFDIQ'),
+    baris('b', '2026-10-01', 10000000, 'TRSF E-BANKING DB 0110/FTSCY/WS95051 BUDI SANTOSO'),
+    baris('c', '2026-10-16', 10000000, 'TRSF E-BANKING DB 0110/FTSCY/WS95051 AHMAD TAUFDIQ'),
+    baris('d', '2026-10-01', 9000000, 'TRSF E-BANKING DB 0110/FTSCY/WS95051 AHMAD TAUFDIQ'),
+  ]);
+  assert.equal(dobel.size, 0, 'beda penerima, tanggal, atau nominal bukan dobel');
+});
+
+test('kunci tidak memuat referensi: pasangan itu justru berbeda di referensi', () => {
+  const a = { tanggal: '2026-10-01', nominal: 1, keterangan: 'X', referensi: '0110/FTSCY/WS95051' };
+  const b = { tanggal: '2026-10-01', nominal: 1, keterangan: 'X', referensi: null };
+  assert.equal(kunciDobel(a), kunciDobel(b));
+});

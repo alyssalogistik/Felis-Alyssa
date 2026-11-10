@@ -11,6 +11,11 @@
 // membandingkannya sebagai teks dan memformatnya dengan memotong teks adalah
 // satu-satunya cara yang tidak bisa menggeser satu hari.
 
+// Aturan "inti keterangan" dipakai bersama dengan penjaga unggahan (pending.js),
+// bukan disalin: dua aturan berbeda akan menandai pasangan yang berbeda di dua
+// tempat. Peramban memuatnya lewat `/rekonsiliasi/pending.js` (lihat server.js).
+import { intiKeterangan } from '../rekonsiliasi/pending.js';
+
 const POLA_TANGGAL = /^(\d{4})-(\d{2})-(\d{2})$/;
 const MS_SEHARI = 24 * 60 * 60 * 1000;
 const OFFSET_WIB_MS = 7 * 60 * 60 * 1000;
@@ -137,18 +142,22 @@ export function pilihBebas(baris, terpakai, batas) {
   return (baris ?? []).filter((t) => !terpakai.has(t.id)).slice(0, batas);
 }
 
-const rapikan = (s) => String(s ?? '').trim().replace(/\s+/g, ' ').toUpperCase();
-
 /**
- * Kunci "kemungkinan dobel": tanggal + nominal + keterangan yang sama.
+ * Kunci "kemungkinan dobel": tanggal + nominal + INTI keterangan.
  *
- * Keterangan hanya diseragamkan huruf dan spasinya, sama seperti sidik di
- * database. Tidak lebih longgar dari itu: dua transfer berbeda tidak boleh
- * tertandai hanya karena mirip.
+ * Inti keterangan, bukan keterangan mentah. E-statement dan Mutasi Rekening
+ * menuliskan transfer yang sama dengan awalan jenis yang berbeda
+ * (`TRSF E-BANKING DB 0110/FTSCY/...` vs `0110/FTSCY/...`), dan itulah persis
+ * cara satu transfer tersimpan dua kali: sidik jari di database memuat
+ * keterangan MAUPUN referensi, jadi keduanya dianggap dua transaksi. Kunci yang
+ * membandingkan keterangan mentah akan melewatkan pasangan ini.
+ *
+ * Referensi sengaja TIDAK ikut: satu cetakan menariknya dari keterangan, yang
+ * lain tidak, sehingga ia justru yang membedakan pasangan itu.
  */
 export function kunciDobel(t) {
   const cent = Math.round(Number(t.nominal ?? 0) * 100);
-  return `${t.tanggal ?? ''}|${cent}|${rapikan(t.keterangan)}`;
+  return `${t.tanggal ?? ''}|${cent}|${intiKeterangan(t.keterangan)}`;
 }
 
 /**
