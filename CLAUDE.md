@@ -1188,10 +1188,17 @@ disajikan di `/siap-tautkan.js` alih-alih disalin ke `public/`.
   begitu; bila daftar terpotong batas, layar menyebutnya. Ringkasan di atas
   panel tidak tahu apa-apa soal tautan, jadi dua angka itu bukan himpunan yang
   sama.
-- **"Kemungkinan dobel" hanya penanda**: tanggal + nominal + keterangan sama
-  (huruf dan spasi diseragamkan, seperti `sidik`). Tidak dicentang otomatis dan
-  tidak ikut "Centang semua hasil". Dua penarikan bernominal sama pada hari yang
-  sama bisa transaksi sungguhan; yang memutuskan manusia dengan mutasi di tangan.
+- **"Kemungkinan dobel" hanya penanda**: tanggal + nominal + **inti** keterangan
+  sama, lewat `intiKeterangan()` milik `pending.js` — aturan yang sama dengan
+  penjaga unggahan, tidak disalin (peramban memuatnya di
+  `/rekonsiliasi/pending.js`). Keterangan mentah tidak cukup: e-statement dan
+  Mutasi Rekening menulis transfer yang sama dengan awalan berbeda
+  (`TRSF E-BANKING DB 0110/FTSCY/...` vs `0110/FTSCY/...`) dan referensi yang
+  berbeda (satu terisi, satu kosong), dan itulah cara satu transfer tersimpan
+  dua kali — `sidik` memuat keduanya, jadi indeks unik tidak menahannya.
+  Referensi sengaja tidak ikut kunci. Tidak dicentang otomatis dan tidak ikut
+  "Centang semua hasil". Dua penarikan bernominal sama pada hari yang sama bisa
+  transaksi sungguhan; yang memutuskan manusia dengan mutasi di tangan.
 - **Tidak ada yang berubah pada data atau logika penautan.** Pintasan hanya
   mengisi tanggal; memuat tetap lewat tombol. Yang tertaut tetap dibuang dari
   daftar lewat `idTerpakai()`.
