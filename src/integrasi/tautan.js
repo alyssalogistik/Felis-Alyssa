@@ -59,6 +59,7 @@ export const SEBAB = {
   SUDAH_DILEPAS: 'sudah_dilepas',
   SUDAH_MENUNGGU_LEPAS: 'sudah_menunggu_lepas',
   ALASAN_KOSONG: 'alasan_kosong',
+  STATUS_BERUBAH: 'status_berubah',
   HILIR_BELUM_DIPASTIKAN: 'hilir_belum_dipastikan',
 };
 
@@ -411,4 +412,29 @@ export function payloadPembayaran(tautan, transaksi, labelEntitas, alokasi = nul
       ? [{ tipe: 'CATATAN', ref: alokasi.keterangan, nominal: Number(tautan.nominal) }]
       : [],
   };
+}
+
+/**
+ * Menafsirkan jawaban fungsi database `lepas_tautan()`.
+ *
+ * Fungsi itu mengubah status DAN menulis riwayat dalam satu transaksi, dan
+ * mengembalikan NOL baris bila status tautan sudah berubah di antara
+ * pembacaan dan perubahan (permintaan lain yang bersamaan). Itu bukan galat
+ * server: itu benturan yang sah, dan pemakai harus melihat kalimat yang
+ * menjelaskannya, bukan "500". Tidak ada yang tertulis pada keadaan ini.
+ *
+ * @param {Array|null|undefined} baris jawaban rpc
+ * @returns {{ok: true, tautan: object} | {ok: false, http: 409, sebab: string, pesan: string}}
+ */
+export function hasilPelepasan(baris) {
+  if (!Array.isArray(baris) || baris.length === 0) {
+    return {
+      ok: false,
+      http: 409,
+      sebab: SEBAB.STATUS_BERUBAH,
+      pesan: 'Status tautan ini baru saja berubah, kemungkinan karena permintaan lain yang '
+        + 'bersamaan. Tidak ada yang diubah. Muat ulang, periksa keadaannya, lalu coba lagi bila perlu.',
+    };
+  }
+  return { ok: true, tautan: baris[0] };
 }

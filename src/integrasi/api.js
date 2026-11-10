@@ -22,7 +22,7 @@ import { namaDariKeterangan } from '../rekonsiliasi/nama.js';
 import { periksaRentang, terapkanRentang, pilihBebas } from './siap-tautkan.js';
 import {
   STATUS, AKSI, SEBAB,
-  kunciSaran, layakDitautkan, supplierValid, pilihSaran, layakDitarik, layakDilepas,
+  kunciSaran, layakDitautkan, supplierValid, pilihSaran, layakDitarik, layakDilepas, hasilPelepasan,
   payloadPembayaran,
   idTerpakai,
   normalSupplierId, POLA_SUPPLIER_ID,
@@ -685,39 +685,39 @@ api.post('/tautan/:transaksi_id/lepas', jalur(async (req, res) => {
     return res.status(tautan ? 409 : 404).json({ pesan: boleh.pesan, kode: boleh.sebab });
   }
 
-  // Perubahannya bersyarat status: dua permintaan yang berjalan bersamaan tidak
-  // bisa sama-sama berhasil, karena yang kedua tidak menemukan baris berstatus
-  // itu lagi. Pola yang sama dipakai tandai-tertarik dan koreksi/akui.
-  const { data, error } = await db
-    .from('tautan_pembayaran')
-    .update({
-      status: boleh.status_baru,
-      alasan: boleh.alasan,
-      ...(boleh.paksa
-        ? { dibatalkan_pada: new Date().toISOString(), dibatalkan_oleh: pelaku(req) }
-        : {}),
-    })
-    .eq('transaksi_id', tautan.transaksi_id)
-    .eq('status', tautan.status)
-    .select(KOLOM_TAUTAN)
-    .single();
-  if (error) throw error;
-
-  // Riwayat ditulis SESUDAH perubahannya berhasil, dan memuat status lama
-  // beserta suppliernya. Tabel itu hanya bisa ditambah — bahkan service_role
-  // tidak bisa menghapusnya — sehingga pelepasan paksa tidak pernah bisa
-  // dihilangkan jejaknya oleh siapa pun, termasuk yang melakukannya.
-  await catatRiwayat({
-    transaksi_id: tautan.transaksi_id,
-    aksi: boleh.aksi,
-    supplier_id_lama: tautan.supplier_id,
-    status_lama: tautan.status,
-    status_baru: data.status,
-    alasan: boleh.paksa
+  // Status dan jejak auditnya diubah dalam SATU transaksi database, lewat
+  // fungsi lepas_tautan() (migration 0017). Dua perintah terpisah dari sini
+  // berarti perintah kedua bisa gagal setelah yang pertama berhasil: status
+  // sudah berubah tanpa jejak. supabase-js tidak punya transaksi antar-panggilan,
+  // jadi atomiknya hanya bisa dijamin database.
+  //
+  // Perubahannya bersyarat status lama. Permintaan bersamaan yang kalah
+  // mendapat nol baris, dan dijawab 409, bukan 500.
+  const { data: jawaban, error } = await db.rpc('lepas_tautan', {
+    p_transaksi_id: tautan.transaksi_id,
+    p_status_lama: tautan.status,
+    p_status_baru: boleh.status_baru,
+    p_aksi: boleh.aksi,
+    p_alasan: boleh.alasan,
+    p_alasan_riwayat: boleh.paksa
       ? `${boleh.alasan} [dinyatakan sudah dihapus di alyssa-dev]`
       : boleh.alasan,
-    oleh: pelaku(req),
+    p_oleh: pelaku(req),
+    p_batalkan: boleh.paksa,
   });
+  if (error) {
+    // Galat di dalam fungsi membatalkan SELURUHNYA, riwayat maupun status.
+    console.error('[tautan] pelepasan dibatalkan database:', tautan.transaksi_id, error.message);
+    return res.status(500).json({
+      pesan: 'Pelepasan gagal dan dibatalkan seluruhnya: status dan jejaknya tidak ada yang '
+        + 'tersimpan. Transaksinya tetap seperti semula. Coba lagi, dan kabari bila berulang.',
+      kode: 'pelepasan_gagal',
+    });
+  }
+
+  const hasil = hasilPelepasan(jawaban);
+  if (!hasil.ok) return res.status(hasil.http).json({ pesan: hasil.pesan, kode: hasil.sebab });
+  const data = hasil.tautan;
 
   res.json({
     ...data,

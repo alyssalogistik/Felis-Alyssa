@@ -169,3 +169,25 @@ test('menunggu_lepas terpisah dari perlu_koreksi_hilir', () => {
   assert.notEqual(STATUS.MENUNGGU_LEPAS, STATUS.PERLU_KOREKSI_HILIR);
   assert.equal(STATUS.MENUNGGU_LEPAS, 'menunggu_lepas');
 });
+
+// ---------------------------------------------------------------------------
+// Jawaban fungsi database lepas_tautan()
+// ---------------------------------------------------------------------------
+
+import { hasilPelepasan } from '../src/integrasi/tautan.js';
+
+test('hasilPelepasan: nol baris berarti benturan 409, bukan galat server', () => {
+  for (const kosong of [[], null, undefined, 'bukan larik']) {
+    const h = hasilPelepasan(kosong);
+    assert.equal(h.ok, false);
+    assert.equal(h.http, 409);
+    assert.equal(h.sebab, 'status_berubah');
+    assert.match(h.pesan, /Tidak ada yang diubah/);
+  }
+});
+
+test('hasilPelepasan: satu baris berarti berhasil dan membawa barisnya', () => {
+  const h = hasilPelepasan([{ transaksi_id: 'a', status: 'menunggu_lepas' }]);
+  assert.equal(h.ok, true);
+  assert.equal(h.tautan.status, 'menunggu_lepas');
+});

@@ -1112,6 +1112,35 @@ tertahan.
 Tidak satu baris `transaksi_bank` maupun `alokasi_pembayaran` yang disentuh —
 diuji dengan sidik jari tabel sebelum dan sesudah, dan keduanya identik.
 
+**Status dan jejak diubah dalam SATU transaksi (migration `0017`).** Endpoint
+tidak lagi menjalankan dua perintah terpisah dari aplikasi — ubah status, lalu
+tulis `tautan_pembayaran_riwayat`. Kalau perintah kedua gagal, statusnya sudah
+telanjur berubah tanpa jejak: pelepasan tanpa bukti, di jalur yang paling perlu
+dibuktikan. supabase-js tidak punya transaksi antar-panggilan, jadi atomiknya
+hanya bisa dijamin database: fungsi `lepas_tautan()` mengubah status dan
+menulis jejak di dalam satu tubuh PL/pgSQL, dan galat di mana pun membatalkan
+seluruhnya. Hanya `service_role` yang boleh memanggilnya — Supabase memberi
+EXECUTE ke `anon` dan `authenticated` pada fungsi baru secara bawaan, dan
+migration mencabutnya.
+
+**Permintaan bersamaan dijawab 409, bukan 500.** Perubahannya bersyarat status
+lama; yang kalah mendapat NOL baris dari fungsi (bukan galat), dan
+`hasilPelepasan()` menerjemahkannya menjadi 409 dengan kalimat yang
+menjelaskan bahwa tidak ada yang diubah. Dulu `.single()` pada nol baris
+melempar galat PostgREST yang berakhir 500.
+
+Dua tes menjaganya, dan keduanya sengaja bukan tiruan:
+`test/skema-lepas-atomik.test.js` menjalankan fungsinya di Postgres sungguhan
+(cluster sementara; DILEWATI bila Postgres tidak terpasang) — termasuk memaksa
+penulisan jejak gagal dan memastikan status kembali, serta dua sesi yang
+berebut; `test/integrasi-lepas-api.test.js` menjalankan router asli terhadap
+PostgREST palsu dan memastikan tidak ada penulisan status/jejak terpisah.
+
+Urutan pemasangan: `0016` (status baru), lalu `0017` (fungsi), baru merge kodenya.
+Kode memanggil `lepas_tautan()`; tanpa `0017` pelepasan gagal dengan 500 yang
+jelas, tidak ada data yang berubah. Pembatalan `0017`:
+`supabase/rollback/0017_batal.sql`.
+
 ### Koreksi sesudah ditarik tidak pernah diam-diam
 
 Yang belum ditarik diubah langsung. Yang sudah ditarik menjadi
