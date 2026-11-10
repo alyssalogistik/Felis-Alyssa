@@ -11,6 +11,9 @@
 
 import { ambil, el, aman, rupiah } from './bantuan.js';
 import { cariPemetaan, PANJANG_KETIK_MINIMAL } from '/cocok-nama.js';
+import {
+  periksaRentang, rentangPintasan, formatTanggal, idKemungkinanDobel, ringkasHasil, teksRentang,
+} from '/siap-tautkan.js';
 
 const LABEL_ENTITAS = {
   PT_ALYSSA_AUTO_LOGISTIK: 'PT Alyssa Auto Logistik',
@@ -584,16 +587,21 @@ export function pasangKendaliRiwayat() {
 /** Nomor giliran, supaya pemuatan lama tidak menimpa hasil pemuatan baru. */
 let giliranSiap = 0;
 
-function barisSiap(t) {
+function barisSiap(t, dobel) {
+  const tandaDobel = dobel.has(t.bank_transaction_id)
+    ? ' <span class="tanda tanda-dobel" title="Ada baris lain dengan tanggal, nominal, dan keterangan yang sama persis. '
+      + 'Bisa transaksi yang sungguh berbeda, bisa salinan. Cocokkan dengan mutasi bank sebelum menautkan.">kemungkinan dobel</span>'
+    : '';
   return `
-    <tr>
+    <tr${dobel.has(t.bank_transaction_id) ? ' class="baris-dobel"' : ''}>
       <td class="pilih-kolom">
         <input type="checkbox" class="pilih-transaksi" value="${aman(t.bank_transaction_id)}"
-               aria-label="Pilih transaksi ${aman(t.tanggal ?? '')}">
+               data-dobel="${dobel.has(t.bank_transaction_id) ? '1' : '0'}"
+               aria-label="Pilih transaksi ${aman(formatTanggal(t.tanggal))}">
       </td>
-      <td>${aman(t.tanggal ?? '')}</td>
+      <td>${aman(formatTanggal(t.tanggal))}</td>
       <td>${t.penerima ? aman(t.penerima) : '<span class="nol">-</span>'}</td>
-      <td class="keterangan-sel">${aman(t.keterangan ?? '')}</td>
+      <td class="keterangan-sel">${aman(t.keterangan ?? '')}${tandaDobel}</td>
       <td class="angka-kolom keluar">${aman(rupiah.format(Number(t.nominal ?? 0)))}</td>
       <td class="keterangan-sel"><code>${aman(t.bank_transaction_id)}</code></td>
     </tr>`;
@@ -607,6 +615,17 @@ export async function muatSiapTautkan() {
   const giliran = ++giliranSiap;
   const kata = el('siap-cari')?.value.trim().replace(/\s+/g, ' ') ?? '';
 
+  // Rentang diperiksa SEBELUM apa pun dikirim. Dari > Sampai tidak dianggap
+  // galat oleh database, hanya menghasilkan daftar kosong — dan kosong di sini
+  // terbaca "tidak ada transaksi".
+  const rentang = periksaRentang(el('siap-dari')?.value, el('siap-sampai')?.value);
+  if (!rentang.ok) {
+    pesan.className = 'pesan gagal';
+    pesan.textContent = rentang.pesan;
+    pesan.hidden = false;
+    return;
+  }
+
   pesan.className = 'pesan';
   pesan.textContent = 'Memuat…';
   pesan.hidden = false;
@@ -615,6 +634,8 @@ export async function muatSiapTautkan() {
   try {
     const parameter = new URLSearchParams({ batas: '50' });
     if (kata !== '') parameter.set('cari', kata);
+    if (rentang.dari) parameter.set('dari', rentang.dari);
+    if (rentang.sampai) parameter.set('sampai', rentang.sampai);
     hasil = await ambil(`/tautan/siap-tautkan?${parameter}`);
   } catch (galat) {
     if (giliran !== giliranSiap) return;
@@ -626,42 +647,93 @@ export async function muatSiapTautkan() {
 
   pesan.hidden = true;
 
+  const adaRentang = Boolean(rentang.dari || rentang.sampai);
+  const sebutan = teksRentang(rentang.dari, rentang.sampai);
+
   if (hasil.jumlah === 0) {
     // Nihil di sini TIDAK berarti semua sudah dibayar atau sudah tertaut —
-    // bisa juga transaksinya belum bertanggal (PEND) atau kata kuncinya tidak
-    // cocok. Menyebutnya "semua sudah ditautkan" akan menyesatkan.
-    kotak.innerHTML = kata === ''
+    // bisa juga transaksinya belum bertanggal (PEND), kata kuncinya tidak
+    // cocok, atau rentangnya terlalu sempit. Menyebutnya "semua sudah
+    // ditautkan" akan menyesatkan.
+    kotak.innerHTML = kata === '' && !adaRentang
       ? '<p class="kosong">Tidak ada transaksi PT yang bertanggal dan masih bebas ditautkan. '
         + 'Transaksi yang belum dibukukan BCA (PEND) tidak ikut di sini — unggah mutasi '
         + 'terbaru di <a href="#/rekonsiliasi">Rekon Bank</a> supaya tanggalnya terisi.</p>'
-      : `<p class="kosong">Tidak ada transaksi bebas yang cocok dengan "${aman(kata)}". `
-        + 'Coba kata kunci lain, atau nama penerima di rekening koran mungkin berbeda '
-        + 'dari nama resmi suppliernya.</p>';
+      : `<p class="kosong">Tidak ada transaksi bebas yang cocok`
+        + `${kata !== '' ? ` dengan "${aman(kata)}"` : ''}`
+        + `${adaRentang ? ` pada rentang ${aman(sebutan)}` : ''}. `
+        + 'Coba perlebar rentang tanggalnya, atau pakai kata kunci lain: nama penerima di '
+        + 'rekening koran mungkin berbeda dari nama resmi suppliernya.</p>';
     return;
   }
 
+  const dobel = idKemungkinanDobel(hasil.data);
+  const { jumlah, total } = ringkasHasil(hasil.data);
+
   kotak.innerHTML = `
+    <div class="ringkas" id="siap-ringkas">
+      <div><b>${jumlah}</b><small>Transaksi ditampilkan</small></div>
+      <div class="r-debit"><b>${aman(rupiah.format(total))}</b><small>Total nominal yang ditampilkan</small></div>
+      <div><b>${aman(sebutan)}</b><small>Rentang tanggal</small></div>
+    </div>
     <p class="keterangan-panel">
-      ${hasil.jumlah} transaksi bebas${hasil.tercapai_batas ? ' (dibatasi 50 teratas, persempit dengan kata kunci)' : ''}
-      &mdash; ${aman(hasil.entitas_label)}
+      ${aman(hasil.entitas_label)}${hasil.tercapai_batas
+        ? ` &mdash; <b>dibatasi ${hasil.jumlah} teratas</b>: jumlah dan total di atas hanya untuk baris yang tampil. `
+          + 'Persempit rentang atau kata kunci supaya semuanya termuat.'
+        : ''}
+      ${dobel.size > 0
+        ? `<br>${dobel.size} baris bertanda <b>kemungkinan dobel</b>. Tidak dicentang otomatis dan `
+          + 'tidak ikut "Centang semua hasil".'
+        : ''}
     </p>
-    <table class="tabel">
-      <thead>
-        <tr>
-          <th class="pilih-kolom"><span class="sr-only">Pilih</span></th>
-          <th>Tanggal</th>
-          <th>Penerima (dari keterangan)</th>
-          <th>Keterangan Transaksi</th>
-          <th class="angka-kolom">Nominal</th>
-          <th>bank_transaction_id</th>
-        </tr>
-      </thead>
-      <tbody>${hasil.data.map(barisSiap).join('')}</tbody>
-    </table>`;
+    <div class="sejajar rapat">
+      <button type="button" id="siap-centang-semua" class="tombol-lembut">Centang semua hasil</button>
+      <button type="button" id="siap-kosongkan" class="tombol-lembut">Kosongkan centang</button>
+    </div>
+    <div class="gulir-mendatar">
+      <table class="tabel">
+        <thead>
+          <tr>
+            <th class="pilih-kolom"><span class="sr-only">Pilih</span></th>
+            <th>Tanggal</th>
+            <th>Penerima (dari keterangan)</th>
+            <th>Keterangan Transaksi</th>
+            <th class="angka-kolom">Nominal</th>
+            <th>bank_transaction_id</th>
+          </tr>
+        </thead>
+        <tbody>${hasil.data.map((t) => barisSiap(t, dobel)).join('')}</tbody>
+      </table>
+    </div>`;
 
   // Pilihan yang menunjuk baris yang sudah tidak ada dibuang, dan yang masih
   // ada dikembalikan centangnya — persis perlakuan tabel Audit.
   document.dispatchEvent(new CustomEvent('bayaran-digambar'));
+}
+
+/**
+ * Mencentang atau mengosongkan SEMUA baris di daftar ini, lewat kotak aslinya.
+ *
+ * Yang berubah hanya kotak dan himpunan `terpilih`; tidak ada yang disimpan.
+ * Baris bertanda kemungkinan dobel TIDAK ikut dicentang: yang boleh menautkan
+ * salah satunya hanya manusia yang sudah mencocokkannya dengan mutasi bank.
+ * Peristiwa 'change' dikirim supaya penghitung dan panel Hubungkan ke Supplier
+ * bereaksi persis seperti pada klik biasa.
+ */
+function aturSemuaCentang(nyalakan) {
+  for (const k of document.querySelectorAll('#siap-hasil .pilih-transaksi')) {
+    if (nyalakan && k.dataset.dobel === '1') continue;
+    if (k.checked === nyalakan) continue;
+    k.checked = nyalakan;
+    k.dispatchEvent(new Event('change', { bubbles: true }));
+  }
+}
+
+function isiPintasan(nama) {
+  const r = rentangPintasan(nama);
+  if (!r) return;
+  el('siap-dari').value = r.dari;
+  el('siap-sampai').value = r.sampai;
 }
 
 export function pasangKendaliSiapTautkan() {
@@ -670,5 +742,18 @@ export function pasangKendaliSiapTautkan() {
   el('siap-muat')?.addEventListener('click', muatSiapTautkan);
   el('siap-cari')?.addEventListener('keydown', (ev) => {
     if (ev.key === 'Enter') { ev.preventDefault(); muatSiapTautkan(); }
+  });
+
+  // Pintasan hanya mengisi tanggal. Memuat tetap lewat tombol, sama seperti
+  // filter di panel Cari: menyusun beberapa isian sekaligus tidak boleh
+  // memicu permintaan setengah jadi.
+  el('siap-pintasan')?.addEventListener('click', (ev) => {
+    const tombol = ev.target.closest?.('[data-pintasan]');
+    if (tombol) isiPintasan(tombol.dataset.pintasan);
+  });
+
+  el('siap-hasil')?.addEventListener('click', (ev) => {
+    if (ev.target.closest?.('#siap-centang-semua')) aturSemuaCentang(true);
+    else if (ev.target.closest?.('#siap-kosongkan')) aturSemuaCentang(false);
   });
 }

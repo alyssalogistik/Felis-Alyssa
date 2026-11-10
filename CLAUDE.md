@@ -1166,6 +1166,36 @@ Daftarnya ingatan, **bukan master supplier**. Felis tidak punya master supplier
 dan tidak pernah membuat id sendiri; yang muncul hanya supplier yang sudah
 pernah ditautkan manusia dari halaman ini.
 
+### Filter tanggal di panel "Transaksi Siap Ditautkan"
+
+Tanpa pembatas, mengetik satu nama menarik transfer lintas bulan sekaligus dan
+yang benar sulit dipilih. Panel ini punya "Dari tanggal" dan "Sampai tanggal"
+(salah satu boleh kosong, kedua ujung ikut) beserta tiga pintasan. Aturannya
+ada di `src/integrasi/siap-tautkan.js` — murni, dipakai server maupun peramban,
+disajikan di `/siap-tautkan.js` alih-alih disalin ke `public/`.
+
+- **Disaring di server, SEBELUM batas jumlah baris.** `terapkanRentang()`
+  dipasang sebelum `.limit()`. Kalau batasnya jatuh lebih dulu, ia memotong
+  sebelum menyaring dan rentang yang sempit tampak kosong padahal barisnya ada.
+- **Dari > Sampai ditolak 400**, di server maupun sebelum dikirim dari layar.
+  Database menganggapnya sah dan mengembalikan kosong; kosong di sini terbaca
+  "tidak ada transaksi".
+- **Tanggal selalu teks `YYYY-MM-DD`**, dibandingkan sebagai teks dan
+  ditampilkan dengan memotong teks (`DD/MM/YYYY`). Tidak pernah `new Date()`
+  dari teks transaksi: itu yang menggeser sehari. Pintasan dihitung dari tanggal
+  WIB (UTC+7) tanpa bergantung pada zona waktu peramban.
+- **Jumlah dan total hanya untuk baris yang ditampilkan**, dan diberi label
+  begitu; bila daftar terpotong batas, layar menyebutnya. Ringkasan di atas
+  panel tidak tahu apa-apa soal tautan, jadi dua angka itu bukan himpunan yang
+  sama.
+- **"Kemungkinan dobel" hanya penanda**: tanggal + nominal + keterangan sama
+  (huruf dan spasi diseragamkan, seperti `sidik`). Tidak dicentang otomatis dan
+  tidak ikut "Centang semua hasil". Dua penarikan bernominal sama pada hari yang
+  sama bisa transaksi sungguhan; yang memutuskan manusia dengan mutasi di tangan.
+- **Tidak ada yang berubah pada data atau logika penautan.** Pintasan hanya
+  mengisi tanggal; memuat tetap lewat tombol. Yang tertaut tetap dibuang dari
+  daftar lewat `idTerpakai()`.
+
 ### Satu supplier, beberapa nama penerima
 
 Pekerjaan atas supplier MARTHEN RUTURAMBE bisa dibayar sebagian ke MARTHEN dan
