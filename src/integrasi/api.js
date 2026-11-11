@@ -19,7 +19,7 @@ import { randomUUID } from 'node:crypto';
 import { createAdminClient } from '../supabase.js';
 import { ENTITAS, kodeEntitas } from '../rekonsiliasi/entitas.js';
 import { namaDariKeterangan } from '../rekonsiliasi/nama.js';
-import { periksaRentang, terapkanRentang, pilihBebas } from './siap-tautkan.js';
+import { periksaRentang, terapkanRentang, saringKembarTertaut } from './siap-tautkan.js';
 import {
   STATUS, AKSI, SEBAB,
   kunciSaran, layakDitautkan, supplierValid, pilihSaran, layakDitarik, payloadPembayaran,
@@ -31,6 +31,16 @@ import { lengkapiRingkasan, lengkapiRincian } from './ringkas.js';
 
 const db = createAdminClient();
 const api = Router();
+
+/** Calon yang dibaca untuk panel Siap Ditautkan sebelum disaring. */
+const BATAS_CALON_SIAP = 1000;
+/** Berapa nilai per `in(...)`: daftar uuid/md5 yang panjang melebihi batas URL. */
+const UKURAN_IN = 100;
+const dibagi = (daftar, ukuran) => {
+  const hasil = [];
+  for (let i = 0; i < daftar.length; i += ukuran) hasil.push(daftar.slice(i, i + ukuran));
+  return hasil;
+};
 
 const KOLOM_TRX = 'id, tanggal, keterangan, debit, kredit, referensi, no_rekening, entitas, sidik';
 const KOLOM_TAUTAN =
@@ -214,16 +224,22 @@ api.get('/tautan', jalur(async (req, res) => {
  * ribuan transaksi, sehingga pemakainya terdorong ke SQL. Alat yang menuntut
  * SQL untuk dipakai belum selesai dibuat.
  *
- * SENGAJA TANPA RINGKASAN UANG. Daftar ini disaring oleh keadaan tautan,
- * sedangkan ringkasan_transaksi_bank() tidak tahu apa-apa soal tautan. Kalau
- * panel ini menampilkan total, angkanya akan menggambarkan himpunan yang
- * berbeda dari baris yang terlihat — dan di halaman yang dipakai memutuskan
- * pembayaran, kekeliruan seperti itu hanya berpindah tempat, tidak hilang.
- * Totalnya tetap milik tabel Audit di bawahnya.
+ * Jumlah dan total yang tampil di layar hanya untuk baris yang ditampilkan,
+ * dan diberi label begitu. Ringkasan di halaman Audit tidak tahu apa-apa soal
+ * tautan, jadi keduanya himpunan yang berbeda dan tidak boleh dibaca sebagai
+ * satu angka.
  *
- * Dibaca dari TABEL transaksi_bank, bukan view transaksi_bank_unik: yang
- * ditautkan adalah baris fisik, dan idempotency di alyssa-dev dikunci pada
- * id fisik itu.
+ * ISI DAFTAR MENGIKUTI REKENING KORAN YANG DILIHAT AUDIT. Calon dipilih dari
+ * view transaksi_bank_unik (salinan dari unggahan berbeda dilipat), lalu
+ * transaksi yang SALINANNYA sudah tertaut dikeluarkan dan dihitung terpisah
+ * (`disembunyikan_kembar`). Tanpa itu, rekening koran yang pernah terunggah dua
+ * kali menampilkan salinannya sebagai "belum ditautkan" padahal uangnya sudah
+ * ditarik ke alyssa-dev.
+ *
+ * View hanya MEMILIH baris wakil. Id yang dikembalikan tetap id fisik di
+ * transaksi_bank, dan jalur penautan membacanya ulang dari TABEL itu: yang
+ * ditautkan adalah baris fisik, dan idempotency di alyssa-dev dikunci pada id
+ * fisik tersebut.
  */
 api.get('/tautan/siap-tautkan', jalur(async (req, res) => {
   // CV hanya histori; operasional baru di PT. Entitas tetap boleh disebut
@@ -248,9 +264,17 @@ api.get('/tautan/siap-tautkan', jalur(async (req, res) => {
   if (galatTautan) throw galatTautan;
   const terpakai = idTerpakai(tautan);
 
+  // Calon dibaca dari view `transaksi_bank_unik`, yang melipat salinan dari
+  // unggahan berbeda — persis yang dilihat layar Audit — bukan dari tabel
+  // fisik. Dari tabel fisik, rekening koran yang sama yang pernah diunggah dua
+  // kali muncul sebagai dua baris, dan salinan yang tidak tertaut tampak
+  // "belum ditautkan" padahal uangnya sudah ditarik ke alyssa-dev.
+  //
+  // View hanya MEMILIH baris wakil; id yang dikembalikan tetap id fisik di
+  // transaksi_bank, dan jalur penautan membacanya ulang dari tabel itu.
   let q = db
-    .from('transaksi_bank')
-    .select(KOLOM_TRX)
+    .from('transaksi_bank_unik')
+    .select('id, tanggal, keterangan, debit, kredit, referensi, entitas')
     .eq('entitas', kode)
     .gt('debit', 0)
     .not('tanggal', 'is', null)
@@ -265,24 +289,47 @@ api.get('/tautan/siap-tautkan', jalur(async (req, res) => {
     if (kata !== '') q = q.ilike('keterangan', `%${kata}%`);
   }
 
-  q = q.limit(batas + terpakai.size);
+  q = q.limit(BATAS_CALON_SIAP);
 
-  const { data, error } = await q;
+  const { data: calon, error } = await q;
   if (error) throw error;
+  const baris = calon ?? [];
 
-  // Yang sudah tertaut dibuang SESUDAH diambil, lalu dipotong ke batas.
-  // Batasnya dinaikkan sebanyak tautan yang ada supaya pembuangan ini tidak
-  // membuat halamannya tampak lebih pendek daripada yang diminta.
-  const bebas = pilihBebas(data, terpakai, batas);
+  // Sidik tampilan tiap calon, lalu SEMUA baris yang berbagi sidik itu. Rumusnya
+  // dibaca dari view `transaksi_bank_kembar`, tidak disalin ke JavaScript:
+  // salinan rumus yang menyimpang akan melewatkan kembar yang seharusnya
+  // tertahan. Hanya kembar yang sudah tertaut yang mengunci sidiknya.
+  const sidikBaris = new Map();
+  for (const bagian of dibagi(baris.map((t) => t.id), UKURAN_IN)) {
+    const { data, error: galat } = await db
+      .from('transaksi_bank_kembar').select('id, sidik_tampil').in('id', bagian);
+    if (galat) throw galat;
+    for (const k of data ?? []) sidikBaris.set(k.id, k.sidik_tampil);
+  }
+
+  const sidikTerkunci = new Set();
+  for (const bagian of dibagi([...new Set(sidikBaris.values())], UKURAN_IN)) {
+    const { data, error: galat } = await db
+      .from('transaksi_bank_kembar').select('id, sidik_tampil').in('sidik_tampil', bagian);
+    if (galat) throw galat;
+    for (const k of data ?? []) if (terpakai.has(k.id)) sidikTerkunci.add(k.sidik_tampil);
+  }
+
+  const hasil = saringKembarTertaut(baris, { terpakai, sidikBaris, sidikTerkunci, batas });
 
   res.json({
     entitas: kode,
     entitas_label: ENTITAS[kode] ?? kode,
     dari: rentang.dari,
     sampai: rentang.sampai,
-    jumlah: bebas.length,
-    tercapai_batas: bebas.length === batas,
-    data: bebas.map((t) => ({
+    jumlah: hasil.bebas.length,
+    // Terpotong bila masih ada baris bebas di luar halaman, ATAU bila calon
+    // yang dibaca sendiri sudah menyentuh pagar — angka yang disembunyikan
+    // hanya mencakup calon yang terbaca.
+    tercapai_batas: hasil.lebih,
+    calon_terpotong: baris.length >= BATAS_CALON_SIAP,
+    disembunyikan_kembar: hasil.disembunyikan,
+    data: hasil.bebas.map((t) => ({
       bank_transaction_id: t.id,
       tanggal: t.tanggal,
       keterangan: t.keterangan,

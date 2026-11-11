@@ -187,3 +187,53 @@ export function teksRentang(dari, sampai) {
   if (sampai) return `sampai ${formatTanggal(sampai)}`;
   return 'semua tanggal';
 }
+
+/**
+ * Menyaring calon transaksi menjadi yang BENAR-BENAR bebas ditautkan, dan
+ * menghitung yang disembunyikan karena salinannya sudah tertaut.
+ *
+ * Tiga keadaan, dan ketiganya berbeda:
+ *  - barisnya sendiri sudah tertaut  -> hilang sendiri, tidak dihitung;
+ *  - SALINANNYA yang tertaut         -> disembunyikan DAN dihitung;
+ *  - bebas                           -> ditampilkan.
+ *
+ * Yang kedua inilah yang menjelaskan selisih antara layar Audit dan panel ini.
+ * Rekening koran yang sama pernah diunggah dua kali (sebelum dan sesudah nomor
+ * rekening disimpan), sehingga satu transfer punya dua baris fisik. Audit
+ * melipatnya; yang ditautkan hanya satu. Tanpa penyaringan ini, salinan yang
+ * tidak tertaut tampil sebagai "belum ditautkan" — padahal uangnya sudah
+ * ditarik ke alyssa-dev, dan menautkannya akan ditolak (409).
+ *
+ * Aturannya mencerminkan penolakan di `POST /tautan` (`kembarSudahDitaut`):
+ * panel tidak boleh menampilkan sesuatu yang akan ditolak saat diklik.
+ *
+ * Gagal membaca sidik sebuah baris BUKAN alasan menyembunyikannya: barisnya
+ * ditampilkan, dan penjaga di jalur penautan tetap menahannya bila ia salinan.
+ *
+ * @param {Array<{id: string, debit: number|string}>} baris calon, sudah terurut
+ * @param {{terpakai: Set<string>, sidikBaris: Map<string,string>,
+ *          sidikTerkunci: Set<string>, batas: number}} konteks
+ */
+export function saringKembarTertaut(baris, { terpakai, sidikBaris, sidikTerkunci, batas }) {
+  const bebas = [];
+  let jumlahSembunyi = 0;
+  let sen = 0;
+
+  for (const t of baris ?? []) {
+    if (terpakai.has(t.id)) continue;
+
+    const sidik = sidikBaris.get(t.id);
+    if (sidik && sidikTerkunci.has(sidik)) {
+      jumlahSembunyi += 1;
+      sen += Math.round(Number(t.debit ?? 0) * 100);
+      continue;
+    }
+    bebas.push(t);
+  }
+
+  return {
+    bebas: bebas.slice(0, batas),
+    lebih: bebas.length > batas,
+    disembunyikan: { jumlah: jumlahSembunyi, total: sen / 100 },
+  };
+}

@@ -1196,6 +1196,39 @@ disajikan di `/siap-tautkan.js` alih-alih disalin ke `public/`.
   mengisi tanggal; memuat tetap lewat tombol. Yang tertaut tetap dibuang dari
   daftar lewat `idTerpakai()`.
 
+**Isi panel mengikuti rekening koran yang dilihat Audit, bukan tabel fisik.**
+Rekening koran yang sama pernah terunggah dua kali — sekali sebelum nomor
+rekening disimpan (`no_rekening` NULL), sekali sesudahnya — sehingga satu
+transfer punya dua baris fisik: `sidik` memuat `no_rekening`, jadi indeks unik
+tidak menahannya. Audit melipatnya lewat `transaksi_bank_unik`; yang ditautkan
+hanya satu. Panel yang membaca tabel fisik menampilkan salinan yang tidak
+tertaut sebagai "belum ditautkan", padahal uangnya sudah ditarik ke alyssa-dev.
+Diukur pada data sungguhan: 6 salinan senilai Rp 86.200.000 untuk satu supplier,
+sedangkan Audit menghitung 14 transaksi senilai Rp 176.200.000 (seluruhnya
+`ditarik`).
+
+- **Calon dari view `transaksi_bank_unik`**, lalu transaksi yang SALINANNYA
+  tertaut dikeluarkan dan dihitung terpisah (`disembunyikan_kembar`). Sidik
+  salinan dibaca dari view `transaksi_bank_kembar`, tidak disalin ke JavaScript.
+- **Baris wakil view bisa jatuh pada salinan yang tidak tertaut** (ia memilih
+  yang paling dulu masuk, sedangkan yang ditautkan bisa yang lebih baru). Itu
+  sebabnya memeriksa "barisnya sendiri tertaut" saja tidak cukup; kembarnya
+  harus diperiksa. Diuji di Postgres sungguhan: `test/skema-salinan-rekening.test.js`.
+- **Aturannya mencerminkan penolakan di `POST /tautan`** (`kembarSudahDitaut`):
+  panel tidak boleh menampilkan yang akan ditolak saat diklik. Tautan berstatus
+  `dibatalkan` tidak mengunci.
+- **Id yang dikembalikan tetap id fisik.** View hanya MEMILIH wakil; penautan
+  membaca ulang dari TABEL `transaksi_bank`, dan idempotency alyssa-dev dikunci
+  pada id fisik itu.
+- **Gagal membaca sidik tidak menyembunyikan baris**: ditampilkan, dan penjaga
+  penautan yang menahannya bila ia salinan.
+- **Yang disembunyikan selalu disebut di layar**, termasuk saat daftar kosong,
+  dan hitungannya hanya mencakup calon yang terbaca (pagar `BATAS_CALON_SIAP`).
+  Daftar kosong tidak pernah dinyatakan sebagai "sudah dibayar".
+- **Batasannya:** salinan yang keterangan atau referensinya berbeda (pasangan
+  e-statement dan Mutasi) bukan kembar menurut `sidik_tampil`, sehingga tidak
+  tersaring di sini. Penanda "kemungkinan dobel" yang menandainya.
+
 ### Satu supplier, beberapa nama penerima
 
 Pekerjaan atas supplier MARTHEN RUTURAMBE bisa dibayar sebagian ke MARTHEN dan
