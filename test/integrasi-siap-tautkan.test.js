@@ -4,6 +4,7 @@ import assert from 'node:assert/strict';
 import {
   tanggalSah, periksaRentang, formatTanggal, hariIniWib, rentangPintasan,
   terapkanRentang, pilihBebas, kunciDobel, idKemungkinanDobel, ringkasHasil, teksRentang,
+  saringKembarTertaut,
 } from '../src/integrasi/siap-tautkan.js';
 import { idTerpakai, STATUS } from '../src/integrasi/tautan.js';
 
@@ -238,4 +239,76 @@ test('penanda dobel hanya melaporkan: daftar masukan tidak berubah', () => {
   idKemungkinanDobel(masukan);
   ringkasHasil(masukan);
   assert.deepEqual(masukan, salinan);
+});
+
+// ---------------------------------------------------------------------------
+// Salinan dari transaksi yang sudah tertaut
+// ---------------------------------------------------------------------------
+
+const calon = (id, debit) => ({ id, debit });
+
+test('salinan yang KEMBARNYA tertaut disembunyikan dan dihitung terpisah', () => {
+  const hasil = saringKembarTertaut(
+    [calon('salinan-1', 600000), calon('salinan-2', 12000000), calon('bebas', 750000)],
+    {
+      terpakai: new Set(['asli-1', 'asli-2']),
+      sidikBaris: new Map([['salinan-1', 'S1'], ['salinan-2', 'S2'], ['bebas', 'S3']]),
+      sidikTerkunci: new Set(['S1', 'S2']),
+      batas: 50,
+    }
+  );
+  assert.deepEqual(hasil.bebas.map((t) => t.id), ['bebas']);
+  assert.deepEqual(hasil.disembunyikan, { jumlah: 2, total: 12600000 });
+  assert.equal(hasil.lebih, false);
+});
+
+test('baris yang SENDIRI sudah tertaut hilang tanpa dihitung sebagai disembunyikan', () => {
+  const hasil = saringKembarTertaut(
+    [calon('tertaut', 5000000), calon('bebas', 100)],
+    {
+      terpakai: new Set(['tertaut']),
+      sidikBaris: new Map([['tertaut', 'S1'], ['bebas', 'S2']]),
+      sidikTerkunci: new Set(['S1']),
+      batas: 50,
+    }
+  );
+  assert.deepEqual(hasil.bebas.map((t) => t.id), ['bebas']);
+  assert.deepEqual(hasil.disembunyikan, { jumlah: 0, total: 0 },
+    'yang tertaut tidak "disembunyikan": ia hilang sendiri, seperti sebelumnya');
+});
+
+test('gagal membaca sidik: baris TETAP tampil (penjaga penautan yang menahannya)', () => {
+  const hasil = saringKembarTertaut(
+    [calon('tanpa-sidik', 1000)],
+    { terpakai: new Set(), sidikBaris: new Map(), sidikTerkunci: new Set(['S1']), batas: 50 }
+  );
+  assert.deepEqual(hasil.bebas.map((t) => t.id), ['tanpa-sidik']);
+  assert.equal(hasil.disembunyikan.jumlah, 0);
+});
+
+test('batas dipotong SESUDAH penyaringan, dan "lebih" menandai sisa yang bebas', () => {
+  const baris = ['a', 'b', 'c', 'd', 'e'].map((id) => calon(id, 1));
+  const konteks = (batas) => ({
+    terpakai: new Set(['a']),
+    sidikBaris: new Map(baris.map((t) => [t.id, `S-${t.id}`])),
+    sidikTerkunci: new Set(['S-b']),
+    batas,
+  });
+
+  const dua = saringKembarTertaut(baris, konteks(2));
+  assert.deepEqual(dua.bebas.map((t) => t.id), ['c', 'd'], 'a tertaut dan b disembunyikan lebih dulu');
+  assert.equal(dua.lebih, true);
+  assert.equal(dua.disembunyikan.jumlah, 1);
+
+  const tiga = saringKembarTertaut(baris, konteks(3));
+  assert.deepEqual(tiga.bebas.map((t) => t.id), ['c', 'd', 'e']);
+  assert.equal(tiga.lebih, false);
+});
+
+test('total disembunyikan dijumlah dalam sen', () => {
+  const hasil = saringKembarTertaut(
+    [calon('x', 0.1), calon('y', 0.2)],
+    { terpakai: new Set(), sidikBaris: new Map([['x', 'S'], ['y', 'S']]), sidikTerkunci: new Set(['S']), batas: 50 }
+  );
+  assert.equal(hasil.disembunyikan.total, 0.3);
 });

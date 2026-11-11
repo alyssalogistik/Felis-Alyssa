@@ -649,6 +649,15 @@ export async function muatSiapTautkan() {
 
   const adaRentang = Boolean(rentang.dari || rentang.sampai);
   const sebutan = teksRentang(rentang.dari, rentang.sampai);
+  const sembunyi = hasil.disembunyikan_kembar ?? { jumlah: 0, total: 0 };
+  const catatanSembunyi = sembunyi.jumlah > 0
+    ? `<p class="keterangan-panel" id="siap-disembunyikan">
+         <b>${sembunyi.jumlah} transaksi cocok (${aman(rupiah.format(Number(sembunyi.total)))})
+         disembunyikan</b>: itu salinan dari transaksi yang sudah tertaut dan ditarik
+         (rekening koran yang sama pernah terunggah lebih dari sekali), bukan pembayaran
+         baru. ${hasil.calon_terpotong ? 'Hitungan ini hanya mencakup sebagian calon; persempit rentang untuk angka lengkap.' : ''}
+       </p>`
+    : '';
 
   if (hasil.jumlah === 0) {
     // Nihil di sini TIDAK berarti semua sudah dibayar atau sudah tertaut —
@@ -663,7 +672,8 @@ export async function muatSiapTautkan() {
         + `${kata !== '' ? ` dengan "${aman(kata)}"` : ''}`
         + `${adaRentang ? ` pada rentang ${aman(sebutan)}` : ''}. `
         + 'Coba perlebar rentang tanggalnya, atau pakai kata kunci lain: nama penerima di '
-        + 'rekening koran mungkin berbeda dari nama resmi suppliernya.</p>';
+        + 'rekening koran mungkin berbeda dari nama resmi suppliernya.</p>'
+        + catatanSembunyi;
     return;
   }
 
@@ -676,6 +686,7 @@ export async function muatSiapTautkan() {
       <div class="r-debit"><b>${aman(rupiah.format(total))}</b><small>Total nominal yang ditampilkan</small></div>
       <div><b>${aman(sebutan)}</b><small>Rentang tanggal</small></div>
     </div>
+    ${catatanSembunyi}
     <p class="keterangan-panel">
       ${aman(hasil.entitas_label)}${hasil.tercapai_batas
         ? ` &mdash; <b>dibatasi ${hasil.jumlah} teratas</b>: jumlah dan total di atas hanya untuk baris yang tampil. `
