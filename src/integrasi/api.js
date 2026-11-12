@@ -21,6 +21,7 @@ import { ENTITAS, kodeEntitas } from '../rekonsiliasi/entitas.js';
 import { namaDariKeterangan } from '../rekonsiliasi/nama.js';
 import { periksaRentang, terapkanRentang, saringKembarTertaut } from './siap-tautkan.js';
 import { layakDikoreksi } from './pilah-tautan.js';
+import { cetakanLainSudahTertaut } from './kembar-cetakan.js';
 import {
   STATUS, AKSI, SEBAB,
   kunciSaran, layakDitautkan, supplierValid, pilihSaran, layakDitarik, payloadPembayaran,
@@ -98,7 +99,7 @@ async function ambilTautan(id) {
  * disalin ke JavaScript: salinan rumus yang menyimpang akan melewatkan kembar
  * yang seharusnya tertahan.
  */
-async function kembarSudahDitaut(transaksiId) {
+async function kembarSidikSudahDitaut(transaksiId) {
   const { data: diri, error: galatDiri } = await db
     .from('transaksi_bank_kembar').select('sidik_tampil').eq('id', transaksiId).maybeSingle();
   if (galatDiri) throw galatDiri;
@@ -115,6 +116,60 @@ async function kembarSudahDitaut(transaksiId) {
     .from('tautan_pembayaran').select(KOLOM_TAUTAN).in('transaksi_id', idLain).neq('status', STATUS.DIBATALKAN);
   if (error) throw error;
   return tautan ?? [];
+}
+
+/** Semua baris fisik pada entitas, tanggal, dan nominal yang sama. */
+async function barisSehari(entitas, tanggal, debit) {
+  const { data, error } = await db
+    .from('transaksi_bank')
+    .select('id, tanggal, debit, keterangan, unggahan_id')
+    .eq('entitas', entitas).eq('tanggal', tanggal).eq('debit', debit);
+  if (error) throw error;
+  return data ?? [];
+}
+
+/** Tautan yang masih memegang transaksinya, untuk daftar id. */
+async function tautanAktifUntuk(ids) {
+  const hasil = [];
+  for (let i = 0; i < ids.length; i += 100) {
+    const { data, error } = await db
+      .from('tautan_pembayaran').select(KOLOM_TAUTAN)
+      .in('transaksi_id', ids.slice(i, i + 100)).neq('status', STATUS.DIBATALKAN);
+    if (error) throw error;
+    hasil.push(...(data ?? []));
+  }
+  return hasil;
+}
+
+/**
+ * Transfer yang sama dari cetakan BCA LAIN, dan semua transfer nyatanya sudah
+ * tertaut. Aturannya (menghitung, bukan sekadar "ada kembar tertaut") ada di
+ * kembar-cetakan.js. Mengembalikan tautan yang menghabiskannya, atau [].
+ */
+async function kembarCetakanSudahDitaut(transaksiId) {
+  const { data: diri, error } = await db
+    .from('transaksi_bank').select('id, entitas, tanggal, debit, keterangan, unggahan_id')
+    .eq('id', transaksiId).maybeSingle();
+  if (error) throw error;
+  if (!diri?.tanggal || !(Number(diri.debit) > 0)) return [];
+
+  const baris = await barisSehari(diri.entitas, diri.tanggal, diri.debit);
+  const tautan = await tautanAktifUntuk(baris.map((r) => r.id));
+  const hasil = cetakanLainSudahTertaut(diri, baris, new Set(tautan.map((t) => t.transaksi_id)));
+  return hasil.habis ? tautan.filter((t) => hasil.tertaut.includes(t.transaksi_id)) : [];
+}
+
+/**
+ * Salinan transaksi ini yang sudah tertaut: salinan persis dari unggahan lain
+ * (lewat sidik tampilan) DAN transfer yang sama dari cetakan BCA lain, yang
+ * keterangan dan referensinya berbeda sehingga tidak dikenali sidik.
+ */
+async function kembarSudahDitaut(transaksiId) {
+  const lewatSidik = await kembarSidikSudahDitaut(transaksiId);
+  const lewatCetakan = await kembarCetakanSudahDitaut(transaksiId);
+  const peta = new Map();
+  for (const t of [...lewatSidik, ...lewatCetakan]) peta.set(t.transaksi_id, t);
+  return [...peta.values()];
 }
 
 // ===========================================================================
@@ -261,9 +316,15 @@ api.get('/tautan/siap-tautkan', jalur(async (req, res) => {
   // menyaringnya di sini jauh lebih jujur daripada menyaring di peramban
   // sesudah barisnya tergambar.
   const { data: tautan, error: galatTautan } = await db
-    .from('tautan_pembayaran').select('transaksi_id, status');
+    .from('tautan_pembayaran').select('transaksi_id, status, tanggal, nominal');
   if (galatTautan) throw galatTautan;
   const terpakai = idTerpakai(tautan);
+  // (tanggal, nominal) transaksi yang tertaut: hanya calon yang berbagi keduanya
+  // dengan sesuatu yang tertaut perlu diperiksa lintas cetakan.
+  const kunciTertaut = new Set(
+    (tautan ?? []).filter((t) => t.status !== STATUS.DIBATALKAN)
+      .map((t) => `${t.tanggal}|${Math.round(Number(t.nominal) * 100)}`)
+  );
 
   // Calon dibaca dari view `transaksi_bank_unik`, yang melipat salinan dari
   // unggahan berbeda — persis yang dilihat layar Audit — bukan dari tabel
@@ -275,7 +336,7 @@ api.get('/tautan/siap-tautkan', jalur(async (req, res) => {
   // transaksi_bank, dan jalur penautan membacanya ulang dari tabel itu.
   let q = db
     .from('transaksi_bank_unik')
-    .select('id, tanggal, keterangan, debit, kredit, referensi, entitas')
+    .select('id, unggahan_id, tanggal, keterangan, debit, kredit, referensi, entitas')
     .eq('entitas', kode)
     .gt('debit', 0)
     .not('tanggal', 'is', null)
@@ -316,21 +377,54 @@ api.get('/tautan/siap-tautkan', jalur(async (req, res) => {
     for (const k of data ?? []) if (terpakai.has(k.id)) sidikTerkunci.add(k.sidik_tampil);
   }
 
-  const hasil = saringKembarTertaut(baris, { terpakai, sidikBaris, sidikTerkunci, batas });
+  // Semua yang bebas dulu, baru dipotong ke batas: yang disembunyikan lintas
+  // cetakan di bawah ini tidak boleh memperpendek halaman.
+  const hasil = saringKembarTertaut(baris, { terpakai, sidikBaris, sidikTerkunci, batas: baris.length });
+
+  // Transfer yang sama dari cetakan BCA LAIN. Hanya calon yang berbagi
+  // (tanggal, nominal) dengan sesuatu yang tertaut yang diperiksa, dan satu
+  // kelompok hanya dibaca sekali.
+  const kelompok = new Map();
+  const bacaKelompok = async (t) => {
+    const kunci = `${t.tanggal}|${Math.round(Number(t.debit) * 100)}`;
+    if (!kelompok.has(kunci)) kelompok.set(kunci, await barisSehari(kode, t.tanggal, t.debit));
+    return kelompok.get(kunci);
+  };
+
+  const tampil = [];
+  let lebih = false;
+  let jumlahCetakan = 0;
+  let senCetakan = 0;
+  for (const t of hasil.bebas) {
+    const kunci = `${t.tanggal}|${Math.round(Number(t.debit) * 100)}`;
+    const habis = kunciTertaut.has(kunci)
+      && cetakanLainSudahTertaut(t, await bacaKelompok(t), terpakai).habis;
+    if (habis) {
+      jumlahCetakan += 1;
+      senCetakan += Math.round(Number(t.debit) * 100);
+    } else if (tampil.length < batas) {
+      tampil.push(t);
+    } else {
+      lebih = true;
+    }
+  }
 
   res.json({
     entitas: kode,
     entitas_label: ENTITAS[kode] ?? kode,
     dari: rentang.dari,
     sampai: rentang.sampai,
-    jumlah: hasil.bebas.length,
+    jumlah: tampil.length,
     // Terpotong bila masih ada baris bebas di luar halaman, ATAU bila calon
     // yang dibaca sendiri sudah menyentuh pagar — angka yang disembunyikan
     // hanya mencakup calon yang terbaca.
-    tercapai_batas: hasil.lebih,
+    tercapai_batas: lebih,
     calon_terpotong: baris.length >= BATAS_CALON_SIAP,
     disembunyikan_kembar: hasil.disembunyikan,
-    data: hasil.bebas.map((t) => ({
+    // Transfer yang sama dari cetakan BCA lain, dan semua transfer nyatanya
+    // sudah tertaut. Dihitung terpisah dari salinan persis di atas.
+    disembunyikan_cetakan_lain: { jumlah: jumlahCetakan, total: senCetakan / 100 },
+    data: tampil.map((t) => ({
       bank_transaction_id: t.id,
       tanggal: t.tanggal,
       keterangan: t.keterangan,
