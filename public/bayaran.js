@@ -126,12 +126,26 @@ function baris(t) {
   // pembayaran yang tidak bisa dipertanggungjawabkan ke mutasi bank.
   const bisaDipilih = !manual && Number(t.debit ?? 0) > 0 && Boolean(t.tanggal);
 
+  // Pengeluaran bank yang belum punya tanggal buku: PEND.
+  //
+  // Dibedakan dari sebab lain karena hanya yang INI tampak seperti kerusakan.
+  // Baris manual dan baris uang masuk memang bukan calon pembayaran supplier
+  // dan tidak ada yang mencarinya di sana; baris PEND sebaliknya — ia
+  // pengeluaran sungguhan, duduk paling atas di tabel, dan kotak pilihnya
+  // tidak ada tanpa satu kata pun yang menerangkan sebabnya.
+  const pend = !manual && Number(t.debit ?? 0) > 0 && !t.tanggal;
+
   return `
-    <tr${manual ? ' class="baris-manual"' : ''} data-transaksi="${aman(t.id ?? '')}">
+    <tr class="${manual ? 'baris-manual' : ''}${pend ? ' baris-pend' : ''}" data-transaksi="${aman(t.id ?? '')}">
       <td class="pilih-kolom">${bisaDipilih
         ? `<input type="checkbox" class="pilih-transaksi" value="${aman(t.id)}" aria-label="Pilih transaksi">`
         : ''}</td>
-      <td>${aman(formatTanggalPolos(t.tanggal))}${t.tanggal_ambigu ? ' <span class="tanda" title="Tanggal ambigu">?</span>' : ''}</td>
+      <td>${pend
+        // Memakai kata PEND yang DICETAK BCA sendiri di kolom tanggalnya, bukan
+        // istilah karangan: itulah yang tertulis di cetakan Mutasi yang sedang
+        // dipegang orangnya, jadi tidak perlu diterjemahkan dua kali.
+        ? '<span class="tanda-pend" title="Belum dibukukan BCA, jadi belum bisa dihubungkan ke supplier">PEND</span>'
+        : `${aman(formatTanggalPolos(t.tanggal))}${t.tanggal_ambigu ? ' <span class="tanda" title="Tanggal ambigu">?</span>' : ''}`}</td>
       <td><span class="lencana-sumber${manual ? ' sumber-manual' : ''}">${aman(sumber)}</span></td>
       <td class="keterangan-sel">${aman(t.keterangan)}</td>
       <td class="angka-kolom${keluar ? ' keluar' : ''}">${formatNominal(t.debit)}</td>
@@ -198,7 +212,32 @@ function tampilPending(pending) {
     </table>`;
 }
 
-function tampilRingkasan(jumlah, ringkasan, adaKataKunci, hanyaDebit, pending = null) {
+/**
+ * Keterangan untuk baris PEND yang ikut tergambar DI TABEL UTAMA.
+ *
+ * Blok peringatan PEND di atas sengaja kosong ketika kriteria tidak menyaring
+ * tanggal — di situ baris PEND memang sudah ikut di daftar utama, dan
+ * menariknya lagi akan menampilkannya dua kali.
+ *
+ * Akibat yang tidak terduga: pada pencarian tanpa filter tanggal, baris PEND
+ * duduk paling atas dengan kotak pilih kosong dan TIDAK ADA satu kalimat pun
+ * di layar yang menerangkan sebabnya. Yang terlihat cuma tombol yang hilang.
+ * Ditemukan dari pemakaian sungguhan.
+ */
+function keteranganPendDiTabel(jumlahPend) {
+  if (jumlahPend === 0) return '';
+  return `
+    <p class="keterangan-panel">
+      ${jumlahPend} baris di tabel bawah bertanda <b>PEND</b>: uangnya sudah keluar,
+      tetapi BCA belum menetapkan tanggal bukunya. Baris itu <b>belum punya kotak
+      pilih</b> dan belum bisa dihubungkan ke supplier &mdash; pembayaran yang
+      dikirim ke alyssa-dev wajib bertanggal. Unggah cetakan Mutasi terbaru di
+      <a href="#/rekonsiliasi">Rekon Bank</a>; tanggalnya akan terisi sendiri,
+      bukan menambah baris baru, lalu kotak pilihnya muncul.
+    </p>`;
+}
+
+function tampilRingkasan(jumlah, ringkasan, adaKataKunci, hanyaDebit, pending = null, jumlahPend = 0) {
   const kotak = el('ringkasan-bayaran');
   const adaPending = (pending?.data?.length ?? 0) > 0;
 
@@ -243,7 +282,8 @@ function tampilRingkasan(jumlah, ringkasan, adaKataKunci, hanyaDebit, pending = 
       <div class="r-debit"><b>${aman(rupiah.format(keluar))}</b><small>Total uang keluar</small></div>
       ${hanyaDebit ? '' : `<div class="r-kredit"><b>${aman(rupiah.format(masuk))}</b><small>Total uang masuk</small></div>`}
     </div>
-    ${adaKataKunci ? '' : '<p class="keterangan-panel">Menampilkan seluruh transaksi. Ketik nama supplier di atas untuk mempersempit.</p>'}`;
+    ${adaKataKunci ? '' : '<p class="keterangan-panel">Menampilkan seluruh transaksi. Ketik nama supplier di atas untuk mempersempit.</p>'}
+    ${keteranganPendDiTabel(jumlahPend)}`;
 }
 
 export async function cariBayaran(lanjut = false) {
@@ -307,7 +347,10 @@ export async function cariBayaran(lanjut = false) {
     }
 
     tampilPending(pending);
-    tampilRingkasan(total, ringkasan, adaKataKunci, hanyaDebit, pending);
+    // Dihitung dari baris yang BENAR-BENAR tergambar, bukan dari hitungan
+    // server: yang perlu diterangkan adalah apa yang ada di layar orangnya.
+    tampilRingkasan(total, ringkasan, adaKataKunci, hanyaDebit, pending,
+      kotak.querySelectorAll('.baris-pend').length);
     gambarKopCetak(total, ringkasan);
     el('muat-bayaran').hidden = mulai >= total;
 
