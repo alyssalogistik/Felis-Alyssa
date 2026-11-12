@@ -1369,3 +1369,18 @@ tertimpa saat audit dijalankan ulang.
 Satu transfer yang membayar beberapa invoice sekaligus, dan pembayaran cicilan,
 belum ditangani. Keduanya akan muncul sebagai KURANG_BAYAR atau PERLU_REVIEW —
 ditandai untuk diperiksa manusia, bukan salah diklaim lunas.
+
+## Tampilan melipat dua cetakan BCA (0018)
+
+`sidik_tampil` di `transaksi_bank_unik` dan `transaksi_bank_kembar` kini
+`entitas | tanggal | inti_keterangan | debit | kredit`. Awalan jenis (`BIF`,
+`BI-FAST DB`, `TRSF E-BANKING DB`, ...) dikupas fungsi SQL `inti_keterangan()`,
+cermin `intiKeterangan()` di `pending.js` — ubah keduanya bersama;
+`test/skema-lipat-inti.test.js` menjaga paritasnya. **Referensi tidak ikut lagi**:
+Mutasi memilikinya, e-statement tidak, sehingga pasangan yang sama tampil dua kali.
+
+Tidak ada baris dihapus atau diubah. Pelipatan tetap berhenti di batas berkas
+(kembar satu unggahan tetap dua baris). Risiko yang diterima sadar: dua transfer
+sungguhan berbeda referensi tetapi sama tanggal, nominal, dan inti keterangan dari
+DUA unggahan berbeda akan dilipat. Pembatalan: `supabase/rollback/0018_batal.sql`.
+Periksa dampaknya dengan `supabase/audit/lipat-inti-sebelum-sesudah.sql`.
