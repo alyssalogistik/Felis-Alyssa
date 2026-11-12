@@ -584,7 +584,15 @@
         rekening koran &mdash; BCA tidak mencetak nomor rekening tujuan pada transfer keluar.
       </p>
 
-      <button type="button" id="tautan-simpan" class="tombol" disabled>Simpan Tautan</button>
+      <div class="sejajar rapat">
+        <button type="button" id="tautan-simpan" class="tombol" disabled>Simpan Tautan</button>
+        <button type="button" id="tautan-koreksi" class="tombol-lembut" disabled>Ubah Supplier (koreksi)</button>
+      </div>
+      <p class="keterangan-panel">
+        <b>Simpan Tautan</b> hanya untuk transaksi yang belum tertaut. Yang SUDAH tertaut
+        tidak ditautkan ulang; kalau suppliernya keliru, pakai <b>Ubah Supplier (koreksi)</b>.
+      </p>
+      <div id="koreksi-konfirmasi" hidden></div>
       <p class="pesan" id="tautan-pesan" hidden></p>
     </details>
 

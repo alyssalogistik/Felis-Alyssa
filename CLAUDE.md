@@ -1229,6 +1229,36 @@ sedangkan Audit menghitung 14 transaksi senilai Rp 176.200.000 (seluruhnya
   e-statement dan Mutasi) bukan kembar menurut `sidik_tampil`, sehingga tidak
   tersaring di sini. Penanda "kemungkinan dobel" yang menandainya.
 
+### Transaksi yang sudah tertaut: diperiksa sebelum disimpan, dikoreksi lewat jalurnya
+
+Transaksi yang sudah ditarik alyssa-dev tidak boleh ditautkan ulang — alyssa-dev
+sudah mencatat pembayarannya ke supplier yang lama. Server menolaknya, dan
+penolakan itu benar. Yang dulu salah ada di layar: pesannya menyuruh "pakai
+koreksi", padahal tidak ada tombol koreksi, dan tiga belas transaksi yang sudah
+tertaut menghasilkan tiga belas baris galat yang sama sehingga terbaca seperti
+sistemnya rusak.
+
+- **Diperiksa SEBELUM menyimpan** (`pilahPilihan()` di `src/integrasi/pilah-tautan.js`,
+  murni, disajikan di `/pilah-tautan.js`). Yang sudah tertaut tidak dikirim ke
+  server; layar menulis SATU kalimat: "13 dari 13 transaksi terpilih sudah tertaut
+  ke X (id), sudah ditarik alyssa-dev". Yang bebas tetap disimpan. **Gagal
+  memeriksa berarti berhenti**, tidak menyimpan buta.
+- **Ubah Supplier (koreksi)** memakai `PATCH /tautan/:id` yang sudah ada. Ada
+  konfirmasi yang menyebut supplier lama dan baru, alasan wajib, dan peringatan
+  bahwa yang sudah ditarik menjadi `perlu_koreksi_hilir`: admin alyssa-dev yang
+  memprosesnya, manual per transaksi. Felis tidak mengubah apa pun di alyssa-dev.
+- **Koreksi ke `supplier_id` yang sama ditolak (409).** Itu bukan koreksi: ia hanya
+  menandai transaksi `perlu_koreksi_hilir` tanpa perubahan, dan alyssa-dev
+  menerima "pindah" ke supplier yang sama.
+- **Koreksi kedua sebelum yang pertama diakui ditolak (409).** `supplier_id_lama`
+  di riwayat dibaca dari tautan saat itu; pada koreksi kedua nilainya supplier
+  yang DIMINTA pertama, bukan yang dipegang alyssa-dev, sedangkan
+  `/integrasi/koreksi` membacanya dari riwayat itu. Hasilnya alyssa-dev diminta
+  memindahkan dari supplier perantara yang tidak pernah ia pegang.
+- **Aturan kelayakan hanya ada di `layakDikoreksi()`**, dipakai server dan layar.
+  Teks status di berkas itu dijaga tesnya agar sama dengan `STATUS` di `tautan.js`.
+- Kontrak dengan alyssa-dev tidak berubah.
+
 ### Satu supplier, beberapa nama penerima
 
 Pekerjaan atas supplier MARTHEN RUTURAMBE bisa dibayar sebagian ke MARTHEN dan
