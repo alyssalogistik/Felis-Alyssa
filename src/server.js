@@ -47,6 +47,12 @@ app.get('/siap-tautkan.js', (_req, res) =>
   res.type('application/javascript').sendFile(join(akar, 'src/integrasi/siap-tautkan.js'))
 );
 
+// Memilah transaksi terpilih (bebas / sudah tertaut) dan aturan koreksi supplier,
+// satu berkas untuk server dan layar.
+app.get('/pilah-tautan.js', (_req, res) =>
+  res.type('application/javascript').sendFile(join(akar, 'src/integrasi/pilah-tautan.js'))
+);
+
 app.use(express.static(join(akar, 'public')));
 
 // Dipakai Railway untuk memastikan container sudah siap. Sengaja tidak

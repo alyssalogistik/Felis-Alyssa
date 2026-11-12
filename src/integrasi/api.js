@@ -20,6 +20,7 @@ import { createAdminClient } from '../supabase.js';
 import { ENTITAS, kodeEntitas } from '../rekonsiliasi/entitas.js';
 import { namaDariKeterangan } from '../rekonsiliasi/nama.js';
 import { periksaRentang, terapkanRentang, saringKembarTertaut } from './siap-tautkan.js';
+import { layakDikoreksi } from './pilah-tautan.js';
 import {
   STATUS, AKSI, SEBAB,
   kunciSaran, layakDitautkan, supplierValid, pilihSaran, layakDitarik, payloadPembayaran,
@@ -625,9 +626,11 @@ api.patch('/tautan/:transaksi_id', jalur(async (req, res) => {
 
   const tautan = await ambilTautan(req.params.transaksi_id);
   if (!tautan) return res.status(404).json({ pesan: 'Tautan tidak ditemukan.' });
-  if (tautan.status === STATUS.DIBATALKAN) {
-    return res.status(409).json({ pesan: 'Tautan ini sudah dibatalkan. Tautkan ulang saja.' });
-  }
+
+  // Aturannya satu, dipakai juga layar: dibatalkan, supplier_id yang sama, dan
+  // koreksi yang masih menunggu diakui alyssa-dev ditolak dengan sebabnya.
+  const boleh = layakDikoreksi(tautan, { supplier_id: sah.supplier_id });
+  if (!boleh.ok) return res.status(409).json({ pesan: boleh.pesan, kode: boleh.sebab });
 
   const sudahKeluar = tautan.status === STATUS.DITARIK || tautan.status === STATUS.PERLU_KOREKSI_HILIR;
   const statusBaru = sudahKeluar ? STATUS.PERLU_KOREKSI_HILIR : STATUS.SIAP;

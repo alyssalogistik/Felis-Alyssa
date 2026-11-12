@@ -12,6 +12,9 @@
 import { ambil, el, aman, rupiah } from './bantuan.js';
 import { cariPemetaan, PANJANG_KETIK_MINIMAL } from '/cocok-nama.js';
 import {
+  pilahPilihan, kalimatTertaut, ringkasTertaut, layakDikoreksi, LABEL_STATUS_TAUTAN,
+} from '/pilah-tautan.js';
+import {
   periksaRentang, rentangPintasan, formatTanggal, idKemungkinanDobel, ringkasHasil, teksRentang,
 } from '/siap-tautkan.js';
 
@@ -56,6 +59,10 @@ function perbaruiHitungan() {
     : `${terpilih.size} transaksi dipilih.`;
   const tombol = el('tautan-simpan');
   if (tombol) tombol.disabled = terpilih.size === 0;
+  const koreksi = el('tautan-koreksi');
+  if (koreksi) koreksi.disabled = terpilih.size === 0;
+  // Pilihan berubah: yang tertera di konfirmasi sudah bukan yang dicentang.
+  tutupKonfirmasiKoreksi();
 }
 
 /** Mengisi lencana status pada baris yang sedang tergambar. */
@@ -279,20 +286,24 @@ async function ketikCari() {
 // menahan tetap server dan CHECK di database, karena layar bisa dilewati.
 const POLA_SUPPLIER_ID = /^[0-9a-f]{8}$/;
 
-async function simpanTautan() {
+/**
+ * Membaca dan memeriksa isian supplier. Mengembalikan null (dan menulis alasannya
+ * di `pesan`) bila belum layak. Dipakai Simpan Tautan DAN koreksi supaya aturan
+ * bentuk supplier_id tidak ada dua.
+ */
+function bacaSupplierForm(pesan) {
   // Huruf besar diseragamkan, tidak ditolak: alyssa-dev membandingkan persis,
   // tetapi 'A3F91B2C' dan 'a3f91b2c' tidak terlihat bedanya saat disalin dari
   // layar sebelah.
   const supplierId = el('tautan-supplier-id').value.trim().toLowerCase();
   const supplierNama = el('tautan-supplier-nama').value.trim();
   const rekening = el('tautan-rekening').value.trim();
-  const pesan = el('tautan-pesan');
 
   if (supplierId === '' || supplierNama === '') {
     pesan.className = 'pesan gagal';
     pesan.textContent = 'supplier_id dan nama supplier dari alyssa-dev wajib diisi.';
     pesan.hidden = false;
-    return;
+    return null;
   }
 
   if (!POLA_SUPPLIER_ID.test(supplierId)) {
@@ -300,22 +311,64 @@ async function simpanTautan() {
     pesan.textContent = 'supplier_id harus tepat 8 digit heksadesimal dari Master Supplier '
       + 'alyssa-dev, misalnya a3f91b2c. Salin dari kolom id, jangan diketik ulang.';
     pesan.hidden = false;
-    return;
+    return null;
   }
 
   // Yang dikirim adalah bentuk yang sudah seragam, dan kotaknya ikut
   // diperbarui supaya yang dilihat orang sama dengan yang tersimpan.
   el('tautan-supplier-id').value = supplierId;
+  return { supplierId, supplierNama, rekening };
+}
+
+/** Tautan yang sudah ada untuk transaksi terpilih, ditarik per bagian. */
+async function ambilTautanPilihan(ids) {
+  const hasil = [];
+  for (let i = 0; i < ids.length; i += 50) {
+    const { data } = await ambil(`/tautan?transaksi_id=${ids.slice(i, i + 50).join(',')}`);
+    hasil.push(...data);
+  }
+  return hasil;
+}
+
+async function simpanTautan() {
+  const pesan = el('tautan-pesan');
+  const form = bacaSupplierForm(pesan);
+  if (!form) return;
+  const { supplierId, supplierNama, rekening } = form;
 
   const tombol = el('tautan-simpan');
   tombol.disabled = true;
   pesan.className = 'pesan';
-  pesan.textContent = 'Menyimpan…';
+  pesan.textContent = 'Memeriksa transaksi terpilih…';
   pesan.hidden = false;
+
+  // Diperiksa SEBELUM menyimpan. Transaksi yang sudah punya tautan ditolak
+  // server satu per satu; tiga belas penolakan yang sama membuat orang mengira
+  // sistemnya rusak, padahal tidak ada yang perlu dilakukan. Gagal memeriksa
+  // berarti berhenti, bukan menyimpan buta.
+  let pilah;
+  try {
+    pilah = pilahPilihan([...terpilih], await ambilTautanPilihan([...terpilih]));
+  } catch (galat) {
+    pesan.className = 'pesan gagal';
+    pesan.textContent = `Gagal memeriksa status tautan: ${galat.message}. Tidak ada yang disimpan.`;
+    tombol.disabled = terpilih.size === 0;
+    return;
+  }
+
+  if (pilah.bebas.length === 0) {
+    // Seluruhnya sudah tertaut: tidak ada yang disimpan, pilihan dibiarkan agar
+    // bisa langsung dipakai untuk Ubah Supplier bila memang keliru.
+    pesan.className = 'pesan';
+    pesan.textContent = `${kalimatTertaut(pilah.tertaut, terpilih.size)} Tidak ada yang perlu ditautkan. `
+      + 'Kalau suppliernya keliru, pakai Ubah Supplier (koreksi).';
+    tombol.disabled = false;
+    return;
+  }
 
   const berhasil = [];
   const gagal = [];
-  for (const id of terpilih) {
+  for (const id of pilah.bebas) {
     try {
       await ambil('/tautan', {
         method: 'POST',
@@ -336,6 +389,9 @@ async function simpanTautan() {
   pesan.textContent = gagal.length === 0
     ? `${berhasil.length} transaksi ditautkan ke ${supplierNama}.`
     : `${berhasil.length} berhasil, ${gagal.length} gagal — ${gagal.join(' | ')}`;
+  if (pilah.tertaut.length > 0) {
+    pesan.textContent += ` ${kalimatTertaut(pilah.tertaut, pilah.bebas.length + pilah.tertaut.length)}`;
+  }
 
   // Pengikatan yang berhasil menambah satu pemetaan baru, jadi ingatan yang
   // tersimpan di halaman sudah basi. Dibuang, bukan ditambahi: yang tersimpan
@@ -425,6 +481,11 @@ export function pasangKendaliTautan() {
   });
 
   el('tautan-simpan')?.addEventListener('click', simpanTautan);
+  el('tautan-koreksi')?.addEventListener('click', siapkanKoreksi);
+  document.addEventListener('click', (ev) => {
+    if (ev.target?.id === 'koreksi-batal') tutupKonfirmasiKoreksi();
+    else if (ev.target?.id === 'koreksi-ya') jalankanKoreksi();
+  });
 
   // Setiap tabel selesai digambar, lencananya diisi ulang dan pilihan yang
   // menunjuk baris yang sudah tidak ada dibuang.
@@ -438,6 +499,146 @@ export function pasangKendaliTautan() {
 
   perbaruiHitungan();
   muatRingkasanSiap();
+}
+
+// ---------------------------------------------------------------------------
+// Ubah Supplier (koreksi) untuk transaksi yang SUDAH tertaut
+//
+// Transaksi yang sudah ditarik alyssa-dev tidak boleh ditautkan ulang: alyssa-dev
+// sudah mencatat pembayarannya ke supplier yang lama. Satu-satunya jalan adalah
+// koreksi. Yang belum ditarik berubah langsung; yang sudah ditarik menjadi
+// "menunggu koreksi diakui alyssa-dev" dan admin di sana yang memprosesnya,
+// manual per transaksi. Felis tidak mengubah apa pun di alyssa-dev.
+// ---------------------------------------------------------------------------
+
+/** Yang akan dikoreksi, ditahan sampai Owner menekan konfirmasi. */
+let koreksiTertunda = null;
+
+function tutupKonfirmasiKoreksi() {
+  koreksiTertunda = null;
+  const kotak = el('koreksi-konfirmasi');
+  if (kotak) { kotak.hidden = true; kotak.innerHTML = ''; }
+}
+
+function pesanKoreksi(kelas, teks) {
+  const pesan = el('tautan-pesan');
+  pesan.className = `pesan ${kelas}`.trim();
+  pesan.textContent = teks;
+  pesan.hidden = teks === '';
+}
+
+async function siapkanKoreksi() {
+  const pesan = el('tautan-pesan');
+  const form = bacaSupplierForm(pesan);
+  if (!form) return;
+  const baru = { supplier_id: form.supplierId, supplier_nama: form.supplierNama };
+
+  pesanKoreksi('', 'Memeriksa transaksi terpilih…');
+  let pilah;
+  try {
+    pilah = pilahPilihan([...terpilih], await ambilTautanPilihan([...terpilih]));
+  } catch (galat) {
+    pesanKoreksi('gagal', `Gagal memeriksa status tautan: ${galat.message}. Tidak ada yang diubah.`);
+    return;
+  }
+
+  const kena = [];
+  const ditolak = new Map();
+  for (const t of pilah.tertaut) {
+    const boleh = layakDikoreksi(t, baru);
+    if (boleh.ok) kena.push(t);
+    else ditolak.set(boleh.pesan, (ditolak.get(boleh.pesan) ?? 0) + 1);
+  }
+
+  const lewati = [
+    ...(pilah.bebas.length > 0
+      ? [`${pilah.bebas.length} belum tertaut: pakai Simpan Tautan, bukan koreksi.`] : []),
+    ...[...ditolak].map(([alasan, jumlah]) => `${jumlah} dilewati. ${alasan}`),
+  ];
+
+  if (kena.length === 0) {
+    pesanKoreksi('gagal', `Tidak ada transaksi terpilih yang bisa dikoreksi. ${lewati.join(' ')}`.trim());
+    return;
+  }
+
+  koreksiTertunda = { kena, baru };
+  pesanKoreksi('', '');
+
+  const sudahTarik = kena.filter((t) => t.status !== 'siap').length;
+  const langsung = kena.length - sudahTarik;
+  const kelompok = ringkasTertaut(kena).map((k) => `
+    <li>${k.jumlah} transaksi: <b>${aman(k.supplier_nama)}</b> (<code>${aman(k.supplier_id)}</code>,
+        ${aman(LABEL_STATUS_TAUTAN[k.status] ?? k.status)})
+        &rarr; <b>${aman(baru.supplier_nama)}</b> (<code>${aman(baru.supplier_id)}</code>)</li>`).join('');
+
+  const kotak = el('koreksi-konfirmasi');
+  kotak.hidden = false;
+  kotak.innerHTML = `
+    <div class="panel">
+      <h3>Ubah Supplier (koreksi) &mdash; ${kena.length} transaksi</h3>
+      <ul>${kelompok}</ul>
+      ${sudahTarik > 0 ? `
+        <p class="peringatan-konflik">
+          ${sudahTarik} transaksi <b>sudah ditarik alyssa-dev</b>. Statusnya menjadi
+          <b>menunggu koreksi diakui alyssa-dev</b>; admin di sana yang memprosesnya,
+          manual per transaksi. Tidak ada yang berubah di alyssa-dev sebelum itu, dan
+          selama menunggu, transaksinya tidak bisa dikoreksi lagi.
+          Pastikan supplier_id baru benar-benar dari Master Supplier alyssa-dev.
+        </p>` : ''}
+      ${langsung > 0 ? `<p class="keterangan-panel">${langsung} transaksi belum ditarik: suppliernya diubah langsung.</p>` : ''}
+      ${lewati.length > 0 ? `<p class="keterangan-panel">${aman(lewati.join(' '))}</p>` : ''}
+      <label>
+        Alasan koreksi (wajib, tercatat di riwayat)
+        <input type="text" id="koreksi-alasan" maxlength="300" autocomplete="off"
+               placeholder="mis. supplier_id salah pilih, yang benar dari master">
+      </label>
+      <div class="sejajar rapat">
+        <button type="button" id="koreksi-ya" class="tombol">Ajukan Koreksi</button>
+        <button type="button" id="koreksi-batal" class="tombol-lembut">Batal</button>
+      </div>
+    </div>`;
+}
+
+async function jalankanKoreksi() {
+  if (!koreksiTertunda) return;
+  const alasan = (el('koreksi-alasan')?.value ?? '').trim();
+  if (alasan.length < 3) {
+    pesanKoreksi('gagal', 'Alasan koreksi wajib diisi (sekurangnya 3 huruf).');
+    return;
+  }
+
+  const { kena, baru } = koreksiTertunda;
+  el('koreksi-ya').disabled = true;
+  pesanKoreksi('', 'Mengajukan koreksi…');
+
+  const berhasil = [];
+  const gagal = [];
+  for (const t of kena) {
+    try {
+      const hasil = await ambil(`/tautan/${t.transaksi_id}`, {
+        method: 'PATCH',
+        body: JSON.stringify({ ...baru, alasan }),
+      });
+      berhasil.push(hasil);
+    } catch (galat) {
+      gagal.push(`${t.transaksi_id.slice(0, 8)}: ${galat.message}`);
+    }
+  }
+
+  const menunggu = berhasil.filter((h) => h.menunggu_alyssa_dev).length;
+  let teks = `${berhasil.length} koreksi diajukan ke ${baru.supplier_nama}`;
+  if (menunggu > 0) teks += `, ${menunggu} menunggu diakui alyssa-dev`;
+  teks += '.';
+  if (gagal.length > 0) teks += ` ${gagal.length} gagal \u2014 ${gagal.join(' | ')}`;
+  pesanKoreksi(gagal.length === 0 ? 'berhasil' : 'gagal', teks);
+
+  tutupKonfirmasiKoreksi();
+  terpilih = new Set();
+  for (const k of kotakPilih()) k.checked = false;
+  perbaruiHitungan();
+  await gambarLencana();
+  await muatSaran();
+  await muatRingkasanSiap();
 }
 
 // ---------------------------------------------------------------------------
