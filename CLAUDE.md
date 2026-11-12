@@ -1229,6 +1229,44 @@ sedangkan Audit menghitung 14 transaksi senilai Rp 176.200.000 (seluruhnya
   e-statement dan Mutasi) bukan kembar menurut `sidik_tampil`, sehingga tidak
   tersaring di sini. Penanda "kemungkinan dobel" yang menandainya.
 
+### Transfer yang sama dari dua cetakan BCA tidak boleh tertaut dua kali
+
+`transaksi_bank_kembar` mengenali salinan lewat `sidik_tampil`, yang memuat
+keterangan DAN referensi. Kedua cetakan menulis keterangan dengan awalan jenis
+berbeda (`TRSF E-BANKING DB 0110/FTSCY/...` vs `0110/FTSCY/...`) dan e-statement
+tidak menurunkan referensi, jadi transfer yang sama tampak sebagai dua transaksi
+dan lolos dari penjaga itu. Penjaga unggahan `sudahTersimpan()` juga tidak
+menangkapnya bila barisnya tidak bersaldo (pagar "tanpa saldo tidak pernah
+dilewati" disengaja). Diukur pada data sungguhan: 43 pasangan untuk 01-10
+Oktober 2026, dan satu di antaranya sudah ditarik DUA KALI ke alyssa-dev
+(Rp 10.000.000).
+
+Penjaganya `cetakanLainSudahTertaut()` di `src/integrasi/kembar-cetakan.js`
+(murni): kunci transfer = tanggal + nominal + `intiKeterangan()` milik
+`pending.js`, tanpa referensi (ia diturunkan dari keterangan dan satu cetakan
+tidak menurunkannya — itulah yang membedakan pasangan itu).
+
+- **ATURANNYA MENGHITUNG, bukan "ada kembar tertaut".** Dua penarikan tunai
+  bernominal sama pada hari yang sama adalah dua transfer nyata, dan KEDUA
+  cetakan mencetak keduanya (empat baris fisik). Jumlah transfer nyata =
+  baris terbanyak yang dimuat satu cetakan; ditolak hanya bila yang tertaut
+  sudah sebanyak itu. Menolak begitu ada satu kembar tertaut akan memblokir
+  transfer nyata yang kedua — dan di sini kekurangan hitung lebih berbahaya.
+- **Hanya berlaku lintas cetakan.** Kelompok dari satu unggahan saja dibiarkan
+  seperti semula.
+- **Dua tempat memakainya:** `POST /tautan` dan `/tautan/saran` (lewat
+  `kembarSudahDitaut()`, bersama penjaga `sidik_tampil`), dan panel Siap
+  Ditautkan, yang menyembunyikan calon yang transfernya sudah habis tertaut
+  dan melaporkannya di `disembunyikan_cetakan_lain` — hanya calon yang berbagi
+  (tanggal, nominal) dengan sesuatu yang tertaut yang diperiksa.
+- **Tidak ada migration dan tidak ada data yang diubah.** Panel belum melipat
+  pasangan yang BELUM tertaut (kedua salinannya tampil); itu pekerjaan lipat
+  tampilan di view, bukan di sini. Menautkan salah satunya otomatis menolak
+  yang lain.
+- Tes `test/integrasi-kembar-cetakan.test.js` (aturan) dan
+  `test/integrasi-kembar-cetakan-api.test.js` (router asli terhadap PostgREST
+  palsu).
+
 ### Transaksi yang sudah tertaut: diperiksa sebelum disimpan, dikoreksi lewat jalurnya
 
 Transaksi yang sudah ditarik alyssa-dev tidak boleh ditautkan ulang — alyssa-dev

@@ -851,12 +851,20 @@ export async function muatSiapTautkan() {
   const adaRentang = Boolean(rentang.dari || rentang.sampai);
   const sebutan = teksRentang(rentang.dari, rentang.sampai);
   const sembunyi = hasil.disembunyikan_kembar ?? { jumlah: 0, total: 0 };
+  const sembunyiCetakan = hasil.disembunyikan_cetakan_lain ?? { jumlah: 0, total: 0 };
   const catatanSembunyi = sembunyi.jumlah > 0
     ? `<p class="keterangan-panel" id="siap-disembunyikan">
          <b>${sembunyi.jumlah} transaksi cocok (${aman(rupiah.format(Number(sembunyi.total)))})
          disembunyikan</b>: itu salinan dari transaksi yang sudah tertaut dan ditarik
          (rekening koran yang sama pernah terunggah lebih dari sekali), bukan pembayaran
          baru. ${hasil.calon_terpotong ? 'Hitungan ini hanya mencakup sebagian calon; persempit rentang untuk angka lengkap.' : ''}
+       </p>`
+    : '';
+  const catatanCetakan = sembunyiCetakan.jumlah > 0
+    ? `<p class="keterangan-panel" id="siap-disembunyikan-cetakan">
+         <b>${sembunyiCetakan.jumlah} transaksi cocok (${aman(rupiah.format(Number(sembunyiCetakan.total)))})
+         disembunyikan</b>: itu transfer yang sama dari cetakan BCA lain (e-statement atau Mutasi)
+         yang sudah tertaut dan ditarik, bukan pembayaran baru.
        </p>`
     : '';
 
@@ -874,7 +882,7 @@ export async function muatSiapTautkan() {
         + `${adaRentang ? ` pada rentang ${aman(sebutan)}` : ''}. `
         + 'Coba perlebar rentang tanggalnya, atau pakai kata kunci lain: nama penerima di '
         + 'rekening koran mungkin berbeda dari nama resmi suppliernya.</p>'
-        + catatanSembunyi;
+        + catatanSembunyi + catatanCetakan;
     return;
   }
 
@@ -888,6 +896,7 @@ export async function muatSiapTautkan() {
       <div><b>${aman(sebutan)}</b><small>Rentang tanggal</small></div>
     </div>
     ${catatanSembunyi}
+    ${catatanCetakan}
     <p class="keterangan-panel">
       ${aman(hasil.entitas_label)}${hasil.tercapai_batas
         ? ` &mdash; <b>dibatasi ${hasil.jumlah} teratas</b>: jumlah dan total di atas hanya untuk baris yang tampil. `
