@@ -57,6 +57,8 @@ const SERVIS = [
   ['POST', /^\/integrasi\/tandai-tertarik$/],
   ['GET', /^\/integrasi\/koreksi$/],
   ['POST', /^\/integrasi\/koreksi\/akui$/],
+  ['GET', /^\/integrasi\/lepas$/],
+  ['POST', /^\/integrasi\/lepas\/akui$/],
 ];
 
 /** Butuh sesi, tapi tidak butuh peran apa pun. */
@@ -175,6 +177,11 @@ export function aksiUntuk(metode, jalurMentah) {
   if (/^\/rekonsiliasi\/pembayaran/.test(jalur)) return 'UBAH_PEMBAYARAN';
   if (/^\/integrasi\/tandai-tertarik$/.test(jalur)) return 'TARIK_PEMBAYARAN';
   if (/^\/integrasi\/koreksi\/akui$/.test(jalur)) return 'AKUI_KOREKSI';
+  // Pelepasan tautan ikut tercatat di jejak aktivitas, bukan hanya di riwayat
+  // tautan: yang satu menjawab "apa yang terjadi pada pembayaran ini", yang
+  // lain menjawab "apa saja yang dikerjakan orang ini hari itu".
+  if (/^\/tautan\/[^/]+\/lepas$/.test(jalur)) return 'LEPAS_TAUTAN';
+  if (/^\/integrasi\/lepas\/akui$/.test(jalur)) return 'AKUI_LEPAS_TAUTAN';
   if (/^\/tautan(\/|$)/.test(jalur)) return 'UBAH_TAUTAN_SUPPLIER';
   return 'UBAH_DATA';
 }

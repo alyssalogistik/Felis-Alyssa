@@ -1686,6 +1686,65 @@ begin
   end if;
 end
 $pagar$;
+--
+--
+--
+--
+--
+alter table tautan_pembayaran
+  drop constraint if exists tautan_pembayaran_status_check;
+alter table tautan_pembayaran
+  add constraint tautan_pembayaran_status_check
+  check (status in ('siap', 'ditarik', 'dibatalkan', 'perlu_koreksi_hilir', 'menunggu_lepas'));
+create index if not exists idx_tautan_menunggu_lepas
+  on tautan_pembayaran (status)
+  where status = 'menunggu_lepas';
+--
+--
+--
+--
+--
+create or replace function lepas_tautan(
+  p_transaksi_id    uuid,
+  p_status_lama     text,
+  p_status_baru     text,
+  p_aksi            text,
+  p_alasan          text,
+  p_alasan_riwayat  text,
+  p_oleh            text,
+  p_batalkan        boolean
+)
+returns setof tautan_pembayaran
+language plpgsql
+security invoker
+set search_path = public
+as $fn$
+declare
+  v_baru tautan_pembayaran%rowtype;
+begin
+  update tautan_pembayaran t
+     set status          = p_status_baru,
+         alasan          = p_alasan,
+         dibatalkan_pada = case when p_batalkan then now()    else t.dibatalkan_pada end,
+         dibatalkan_oleh = case when p_batalkan then p_oleh   else t.dibatalkan_oleh end
+   where t.transaksi_id = p_transaksi_id
+     and t.status       = p_status_lama
+  returning t.* into v_baru;
+  if not found then
+    return;
+  end if;
+  insert into tautan_pembayaran_riwayat
+    (transaksi_id, aksi, supplier_id_lama, status_lama, status_baru, alasan, oleh)
+  values
+    (p_transaksi_id, p_aksi, v_baru.supplier_id, p_status_lama, v_baru.status,
+     p_alasan_riwayat, p_oleh);
+  return next v_baru;
+end;
+$fn$;
+revoke all on function lepas_tautan(uuid, text, text, text, text, text, text, boolean) from public;
+revoke all on function lepas_tautan(uuid, text, text, text, text, text, text, boolean) from anon;
+revoke all on function lepas_tautan(uuid, text, text, text, text, text, text, boolean) from authenticated;
+grant execute on function lepas_tautan(uuid, text, text, text, text, text, text, boolean) to service_role;
 
 -- Setelah skema berubah, PostgREST masih memakai peta lama sampai diberi
 -- tahu. Tanpa ini tabel baru tetap dilaporkan "not found in the schema

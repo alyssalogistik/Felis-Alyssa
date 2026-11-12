@@ -7,7 +7,9 @@ import {
 import { pasangKendaliRekonsiliasi, muatRekonsiliasi } from './rekonsiliasi.js';
 import { pasangKendaliAudit, muatAudit, muatStatusKoran } from './audit.js';
 import { pasangKendaliBayaran, cariBayaran, cariSupplier } from './bayaran.js';
-import { pasangKendaliTautan, pasangKendaliRiwayat, pasangKendaliSiapTautkan } from './tautan.js';
+import {
+  pasangKendaliTautan, pasangKendaliRiwayat, pasangKendaliSiapTautkan, pasangKendaliLepas,
+} from './tautan.js';
 import { pasangKendaliSupplier, muatSupplier } from './supplier.js';
 import { pasangKendaliImpor } from './impor.js';
 import { pasangKendaliPembayaran, muatPembayaranManual } from './pembayaran.js';
@@ -356,6 +358,7 @@ pasangKendaliBayaran();
 pasangKendaliTautan();
 pasangKendaliRiwayat();
 pasangKendaliSiapTautkan();
+pasangKendaliLepas();
 pasangKendaliSupplier(cariSupplier);
 pasangKendaliMekari();
 
