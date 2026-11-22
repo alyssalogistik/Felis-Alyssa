@@ -13,6 +13,7 @@ import { ambil, el, aman, rupiah } from './bantuan.js';
 import { cariPemetaan, PANJANG_KETIK_MINIMAL } from '/cocok-nama.js';
 import {
   pilahPilihan, kalimatTertaut, ringkasTertaut, layakDikoreksi, LABEL_STATUS_TAUTAN,
+  satukanKembar, kalimatKembar,
 } from '/pilah-tautan.js';
 import {
   periksaRentang, rentangPintasan, formatTanggal, idKemungkinanDobel, ringkasHasil, teksRentang,
@@ -330,6 +331,26 @@ async function ambilTautanPilihan(ids) {
   return hasil;
 }
 
+/** Tautan kembaran dari id terpilih yang dirinya sendiri belum tertaut. */
+async function ambilKembarTertaut(ids) {
+  const hasil = [];
+  for (let i = 0; i < ids.length; i += 50) {
+    const { data } = await ambil(`/tautan/via-kembar?transaksi_id=${ids.slice(i, i + 50).join(',')}`);
+    hasil.push(...data);
+  }
+  return hasil;
+}
+
+/**
+ * Pilahan yang sudah memperhitungkan kembaran. Id terpilih yang hanya salinan
+ * dari transaksi yang sudah tertaut tidak lagi dianggap bebas.
+ */
+async function pilahDenganKembar(ids) {
+  const pilah = pilahPilihan(ids, await ambilTautanPilihan(ids));
+  if (pilah.bebas.length === 0) return { ...pilah, lewatKembar: [], diwakili: 0 };
+  return satukanKembar(pilah, await ambilKembarTertaut(pilah.bebas));
+}
+
 async function simpanTautan() {
   const pesan = el('tautan-pesan');
   const form = bacaSupplierForm(pesan);
@@ -348,7 +369,7 @@ async function simpanTautan() {
   // berarti berhenti, bukan menyimpan buta.
   let pilah;
   try {
-    pilah = pilahPilihan([...terpilih], await ambilTautanPilihan([...terpilih]));
+    pilah = await pilahDenganKembar([...terpilih]);
   } catch (galat) {
     pesan.className = 'pesan gagal';
     pesan.textContent = `Gagal memeriksa status tautan: ${galat.message}. Tidak ada yang disimpan.`;
@@ -360,8 +381,9 @@ async function simpanTautan() {
     // Seluruhnya sudah tertaut: tidak ada yang disimpan, pilihan dibiarkan agar
     // bisa langsung dipakai untuk Ubah Supplier bila memang keliru.
     pesan.className = 'pesan';
-    pesan.textContent = `${kalimatTertaut(pilah.tertaut, terpilih.size)} Tidak ada yang perlu ditautkan. `
-      + 'Kalau suppliernya keliru, pakai Ubah Supplier (koreksi).';
+    pesan.textContent = `${kalimatTertaut(pilah.tertaut, terpilih.size)} ${kalimatKembar(pilah.diwakili)} `
+      .replace(/\s+/g, ' ').trim()
+      + ' Tidak ada yang perlu ditautkan. Kalau suppliernya keliru, pakai Ubah Supplier (koreksi).';
     tombol.disabled = false;
     return;
   }
@@ -390,8 +412,9 @@ async function simpanTautan() {
     ? `${berhasil.length} transaksi ditautkan ke ${supplierNama}.`
     : `${berhasil.length} berhasil, ${gagal.length} gagal — ${gagal.join(' | ')}`;
   if (pilah.tertaut.length > 0) {
-    pesan.textContent += ` ${kalimatTertaut(pilah.tertaut, pilah.bebas.length + pilah.tertaut.length)}`;
+    pesan.textContent += ` ${kalimatTertaut(pilah.tertaut, pilah.bebas.length + pilah.tertaut.length + pilah.diwakili)}`;
   }
+  if (pilah.diwakili > 0) pesan.textContent += ` ${kalimatKembar(pilah.diwakili)}`;
 
   // Pengikatan yang berhasil menambah satu pemetaan baru, jadi ingatan yang
   // tersimpan di halaman sudah basi. Dibuang, bukan ditambahi: yang tersimpan
@@ -536,7 +559,7 @@ async function siapkanKoreksi() {
   pesanKoreksi('', 'Memeriksa transaksi terpilih…');
   let pilah;
   try {
-    pilah = pilahPilihan([...terpilih], await ambilTautanPilihan([...terpilih]));
+    pilah = await pilahDenganKembar([...terpilih]);
   } catch (galat) {
     pesanKoreksi('gagal', `Gagal memeriksa status tautan: ${galat.message}. Tidak ada yang diubah.`);
     return;
@@ -544,7 +567,9 @@ async function siapkanKoreksi() {
 
   const kena = [];
   const ditolak = new Map();
-  for (const t of pilah.tertaut) {
+  // Yang dikoreksi: tautan transaksi terpilih yang sudah tertaut, ditambah tautan
+  // KEMBARAN dari wakil yang hanya salinan (id fisik yang benar-benar ditarik).
+  for (const t of [...pilah.tertaut, ...pilah.lewatKembar]) {
     const boleh = layakDikoreksi(t, baru);
     if (boleh.ok) kena.push(t);
     else ditolak.set(boleh.pesan, (ditolak.get(boleh.pesan) ?? 0) + 1);
@@ -587,6 +612,7 @@ async function siapkanKoreksi() {
         </p>` : ''}
       ${langsung > 0 ? `<p class="keterangan-panel">${langsung} transaksi belum ditarik: suppliernya diubah langsung.</p>` : ''}
       ${lewati.length > 0 ? `<p class="keterangan-panel">${aman(lewati.join(' '))}</p>` : ''}
+      ${pilah.lewatKembar.length > 0 ? `<p class="keterangan-panel">${pilah.diwakili} transaksi terpilih adalah salinan; yang dikoreksi ${pilah.lewatKembar.length} transaksi asli yang sudah tertaut (kembarannya).</p>` : ''}
       <label>
         Alasan koreksi (wajib, tercatat di riwayat)
         <input type="text" id="koreksi-alasan" maxlength="300" autocomplete="off"

@@ -270,6 +270,31 @@ api.get('/tautan', jalur(async (req, res) => {
   res.json({ data: data ?? [] });
 }));
 
+/**
+ * Tautan KEMBARAN dari transaksi terpilih yang dirinya sendiri belum tertaut.
+ *
+ * Audit menampilkan satu baris wakil per transfer, dan wakil itu bisa salinan
+ * yang tidak tertaut sementara kembarannya yang tersembunyi sudah ditarik
+ * alyssa-dev. Layar memakai ini supaya Ubah Supplier mengoreksi tautan yang
+ * benar-benar ditarik, bukan menyimpulkan "belum tertaut".
+ *
+ * Murni baca. Aturan kembarnya SAMA dengan penolakan di POST /tautan
+ * (`kembarSudahDitaut`), tidak ditulis ulang.
+ */
+api.get('/tautan/via-kembar', jalur(async (req, res) => {
+  const ids = [...new Set(String(req.query.transaksi_id ?? '').split(',').filter((x) => POLA_UUID.test(x)))]
+    .slice(0, UKURAN_IN);
+  if (ids.length === 0) return res.json({ data: [] });
+
+  const sendiri = new Set((await tautanAktifUntuk(ids)).map((t) => t.transaksi_id));
+  const data = [];
+  for (const id of ids) {
+    if (sendiri.has(id)) continue;
+    for (const t of await kembarSudahDitaut(id)) data.push({ transaksi_id: id, tautan: t });
+  }
+  res.json({ data });
+}));
+
 /** Pemetaan yang tersimpan, beserta tanda konfliknya. */
 /**
  * Transaksi bank yang MASIH BEBAS ditautkan ke supplier.
