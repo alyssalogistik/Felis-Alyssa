@@ -1297,6 +1297,25 @@ sistemnya rusak.
   Teks status di berkas itu dijaga tesnya agar sama dengan `STATUS` di `tautan.js`.
 - Kontrak dengan alyssa-dev tidak berubah.
 
+### Koreksi dan penautan memperhitungkan kembaran yang tertaut
+
+Audit menampilkan SATU baris wakil per transfer, dan wakil itu bisa jatuh pada
+salinan yang TIDAK tertaut sementara kembarannya yang tersembunyi yang sudah
+ditarik alyssa-dev. Memilih wakil itu lalu menekan Ubah Supplier hanya menemukan
+"belum tertaut", sehingga pembayaran yang sudah ditarik tertinggal di supplier
+lama tanpa satu pun galat. Diukur pada data sungguhan: tiga pembayaran (Rp
+35.500.000) tidak terjangkau koreksi untuk AHMAD TAUFDIQ.
+
+- `GET /tautan/via-kembar?transaksi_id=...` murni baca: untuk id terpilih yang
+  dirinya sendiri belum tertaut, mengembalikan tautan kembarannya. Aturan kembarnya
+  memakai `kembarSudahDitaut()` yang sama dengan penolakan di `POST /tautan`.
+- `satukanKembar()` (murni, di `pilah-tautan.js`) mengeluarkan wakil dari "bebas" dan
+  menambahkan tautan kembarannya ke yang dikoreksi. Yang dikoreksi id fisik yang
+  benar-benar ditarik, bukan wakilnya.
+- Simpan Tautan memakai pilahan yang sama: wakil yang kembarannya tertaut dilewati
+  dengan SATU kalimat, bukan satu galat 409 per transaksi.
+- Tidak ada migration dan tidak ada data yang diubah.
+
 ### Satu supplier, beberapa nama penerima
 
 Pekerjaan atas supplier MARTHEN RUTURAMBE bisa dibayar sebagian ke MARTHEN dan

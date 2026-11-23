@@ -47,6 +47,57 @@ export function pilahPilihan(ids, tautan) {
   return { bebas, tertaut };
 }
 
+/**
+ * Menyambungkan hasil pilahan dengan KEMBARAN yang sudah tertaut.
+ *
+ * Audit melipat salinan rekening koran dan menampilkan SATU baris wakil per
+ * transfer. Wakil itu bisa jatuh pada salinan yang TIDAK tertaut, padahal uangnya
+ * ditarik lewat kembarannya yang tersembunyi. Memilih wakilnya lalu menekan
+ * Ubah Supplier dulu hanya menemukan "belum tertaut", sehingga pembayaran yang
+ * sebenarnya sudah ditarik tertinggal di supplier lama tanpa satu pun galat.
+ *
+ * Yang dikoreksi adalah tautan kembarannya (id fisik yang ditarik alyssa-dev),
+ * bukan wakilnya. Id terpilih yang kembarannya tertaut tidak lagi "bebas":
+ * menautkannya hanya akan ditolak server.
+ *
+ * @param {{bebas: string[], tertaut: Array}} pilah hasil pilahPilihan()
+ * @param {Array<{transaksi_id: string, tautan: object}>} pasangan id terpilih dan
+ *        tautan kembarannya (dari GET /tautan/via-kembar)
+ * @returns {{bebas: string[], tertaut: Array, lewatKembar: Array, diwakili: number}}
+ */
+export function satukanKembar(pilah, pasangan) {
+  const peta = new Map();
+  for (const p of pasangan ?? []) {
+    if (!sudahTertaut(p?.tautan)) continue;
+    if (!peta.has(p.transaksi_id)) peta.set(p.transaksi_id, []);
+    peta.get(p.transaksi_id).push(p.tautan);
+  }
+
+  const lihat = new Set((pilah.tertaut ?? []).map((t) => t.transaksi_id));
+  const lewatKembar = [];
+  const bebas = [];
+  let diwakili = 0;
+  for (const id of pilah.bebas ?? []) {
+    const kembar = peta.get(id);
+    if (!kembar) { bebas.push(id); continue; }
+    diwakili += 1;
+    for (const t of kembar) {
+      if (lihat.has(t.transaksi_id)) continue;
+      lihat.add(t.transaksi_id);
+      lewatKembar.push(t);
+    }
+  }
+  return { bebas, tertaut: pilah.tertaut ?? [], lewatKembar, diwakili };
+}
+
+/** Satu kalimat untuk id terpilih yang hanya salinan dari transaksi yang sudah tertaut. */
+export function kalimatKembar(diwakili) {
+  if (!diwakili) return '';
+  return `${diwakili} transaksi terpilih adalah salinan dari transaksi yang sudah tertaut `
+    + '(rekening koran yang sama terunggah lebih dari sekali), jadi dilewati. '
+    + 'Untuk mengubah suppliernya, pakai Ubah Supplier (koreksi): yang dikoreksi transaksi aslinya.';
+}
+
 /** Mengelompokkan yang sudah tertaut per supplier dan status, terbanyak dulu. */
 export function ringkasTertaut(tertaut) {
   const kelompok = new Map();

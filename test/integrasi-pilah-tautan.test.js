@@ -91,3 +91,44 @@ test('koreksi: tautan tidak ada dan sedang menunggu pelepasan', () => {
   assert.equal(layakDikoreksi(null, { supplier_id: 'ffffffff' }).sebab, SEBAB_KOREKSI.TIDAK_ADA);
   assert.equal(layakDikoreksi(tautan('a', 'menunggu_lepas'), { supplier_id: 'ffffffff' }).sebab, SEBAB_KOREKSI.MENUNGGU_LEPAS);
 });
+
+// --- satukanKembar: wakil yang hanya salinan -------------------------------
+
+import { satukanKembar, kalimatKembar } from '../src/integrasi/pilah-tautan.js';
+
+const tt = (id, status = 'ditarik') => ({ transaksi_id: id, supplier_id: '0c2408c0', supplier_nama: 'X', status });
+
+test('satukanKembar: wakil yang kembarannya tertaut tidak lagi bebas, dan yang dikoreksi kembarannya', () => {
+  const pilah = { bebas: ['w1', 'w2', 'baru'], tertaut: [tt('t1')] };
+  const hasil = satukanKembar(pilah, [
+    { transaksi_id: 'w1', tautan: tt('k1') },
+    { transaksi_id: 'w2', tautan: tt('k2') },
+  ]);
+  assert.deepEqual(hasil.bebas, ['baru']);
+  assert.deepEqual(hasil.lewatKembar.map((t) => t.transaksi_id), ['k1', 'k2']);
+  assert.equal(hasil.diwakili, 2);
+  assert.deepEqual(hasil.tertaut.map((t) => t.transaksi_id), ['t1']);
+});
+
+test('satukanKembar: tidak menggandakan tautan yang sudah ikut terpilih atau dipakai dua wakil', () => {
+  const hasil = satukanKembar(
+    { bebas: ['w1', 'w2'], tertaut: [tt('k1')] },
+    [{ transaksi_id: 'w1', tautan: tt('k1') }, { transaksi_id: 'w2', tautan: tt('k1') }],
+  );
+  assert.deepEqual(hasil.lewatKembar, [], 'k1 sudah ada di tertaut');
+  assert.equal(hasil.diwakili, 2);
+  assert.deepEqual(hasil.bebas, []);
+});
+
+test('satukanKembar: tautan dibatalkan atau tanpa pasangan tidak mengubah apa pun', () => {
+  const pilah = { bebas: ['a'], tertaut: [] };
+  assert.deepEqual(satukanKembar(pilah, []), { bebas: ['a'], tertaut: [], lewatKembar: [], diwakili: 0 });
+  assert.deepEqual(
+    satukanKembar(pilah, [{ transaksi_id: 'a', tautan: tt('k', 'dibatalkan') }]).bebas, ['a'],
+  );
+});
+
+test('kalimatKembar: kosong bila tidak ada, satu kalimat bila ada', () => {
+  assert.equal(kalimatKembar(0), '');
+  assert.match(kalimatKembar(3), /^3 transaksi terpilih adalah salinan/);
+});
